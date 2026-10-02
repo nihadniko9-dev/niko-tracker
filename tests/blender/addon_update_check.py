@@ -1,11 +1,13 @@
 """Background check of the add-on's update button from a release folder (no UI).
 
-blender.exe -b --factory-startup --python tests/blender/addon_update_check.py -- <scratch folder> [github]
+blender.exe -b --factory-startup --python tests/blender/addon_update_check.py -- <scratch folder> [github [url [distro]]]
 Copies the add-on into <scratch>/addons/niko_tracker (never updates the repo's own files), makes a
 release folder with a newer version (latest.json + zip, as scripts/publish_release.py writes),
 points the preferences at it, runs niko.update and checks the files and the version were replaced.
 "github": instead, marks the copy one patch version older than the newest GitHub release, points
 the folder nowhere and checks niko.update installs that release from the internet.
+"github <latest.json url> [distro]": the same from another address (a local test server); an
+engine image in [distro] gets that release's engine code too (check its ENGINE_VERSION).
 """
 
 import json
@@ -29,9 +31,13 @@ addon_utils.enable("niko_tracker", default_set=True)
 from niko_tracker import ops  # noqa: E402
 
 cur = ops._version_of(os.path.join(here, "__init__.py"))
-if sys.argv[-1] == "github":
+args = sys.argv[sys.argv.index("--") + 1:]
+if len(args) > 1 and args[1] == "github":
     import urllib.request
     p = bpy.context.preferences.addons["niko_tracker"].preferences
+    if len(args) > 2:  # another release address (a local test server) and the engine it updates
+        p.update_url = args[2]
+        p.distro = args[3] if len(args) > 3 else p.distro
     with urllib.request.urlopen(p.update_url, timeout=30) as r:
         rel = tuple(int(x) for x in json.load(r)["version"].split("."))
     older = (rel[0], rel[1], rel[2] - 1)

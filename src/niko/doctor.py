@@ -16,6 +16,16 @@ from .registry import BACKENDS, CHECKPOINTS
 OK, WARN, FAIL = "OK", "WARN", "FAIL"
 
 
+def engine_image() -> bool:
+    """An installed engine image (installer/engine): no CUDA toolkit or Linux Blender inside, by design."""
+    return (Path(os.environ.get("NIKO_REPO", "")) / "ENGINE_VERSION").is_file()
+
+
+def _dev_only(ok: bool) -> str:
+    """FAIL on a development machine; on an engine image only a warning."""
+    return OK if ok else (WARN if engine_image() else FAIL)
+
+
 @dataclass
 class Check:
     group: str
@@ -59,7 +69,8 @@ def check_system() -> list[Check]:
                          f"{home} ({'ext4' if on_linux_fs else 'Windows mount!'}), {free:.0f} GB free"))
 
     arch = os.environ.get("TORCH_CUDA_ARCH_LIST", "")
-    out.append(Check("system", "TORCH_CUDA_ARCH_LIST", OK if arch == "12.0" else FAIL, arch or "unset"))
+    out.append(Check("system", "TORCH_CUDA_ARCH_LIST", _dev_only(arch == "12.0"),
+                     arch or ("unset (only to build backends)" if engine_image() else "unset")))
     # only needed to download gated checkpoints; once they are on disk it may be revoked
     out.append(Check("system", "HF_TOKEN", OK if os.environ.get("HF_TOKEN") else WARN,
                      "set (value not shown)" if os.environ.get("HF_TOKEN") else "unset (only needed for downloads)"))
@@ -89,7 +100,9 @@ def check_gpu() -> list[Check]:
         ver = (int(m.group(1)), int(m.group(2)))
         out.append(Check("gpu", "nvcc", OK if ver >= (12, 8) else FAIL, f"CUDA {ver[0]}.{ver[1]} at {nvcc}"))
     else:
-        out.append(Check("gpu", "nvcc", FAIL, txt[:200] or "not found"))
+        out.append(Check("gpu", "nvcc", _dev_only(False),
+                         "not in the engine image (only to build backends)" if engine_image()
+                         else (txt[:200] or "not found")))
     return out
 
 
@@ -146,7 +159,9 @@ def check_blender() -> list[Check]:
     win = Path(paths.WSL_WINDOWS_BLENDER)
     out = []
     if exe is None:
-        out.append(Check("blender", "Linux Blender 5.2", FAIL, "not found under $NIKO_HOME/blender"))
+        out.append(Check("blender", "Linux Blender 5.2", _dev_only(False),
+                         "not in the engine image (only to render benchmark shots)" if engine_image()
+                         else "not found under $NIKO_HOME/blender"))
     else:
         rc, txt = _run([exe, "--version"])
         first = txt.splitlines()[0] if txt else ""

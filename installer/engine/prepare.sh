@@ -17,7 +17,8 @@ OLD="/mnt/d/Pack/Track Nhad"
 rm -rf "$E"
 mkdir -p "$E"
 tar -xf "$SRC" -C "$E"
-echo "$VER" > "$E/ENGINE_VERSION"
+echo "$VER" > "$E/ENGINE_VERSION"   # the engine code (updated alone by the add-on's update button)
+echo "$VER" > "$N/IMAGE_VERSION"    # the environments it runs on (changed only by a new setup)
 
 for f in "$N"/envs/*/lib/python3.12/site-packages/*.pth \
          "$N"/envs/*/lib/python3.12/site-packages/*.dist-info/direct_url.json; do
@@ -46,7 +47,7 @@ if [ -f "$HOME/.config/niko/secrets.sh" ]; then . "$HOME/.config/niko/secrets.sh
 EOF
 # the folders stage.sh left out, empty: models are downloaded into checkpoints at install
 mkdir -p "$N/checkpoints" "$N/cache/uv" "$N/cache/hf" "$N/solves"
-chown -R 1000:1000 "$E" "$H/.config/niko" "$N/checkpoints" "$N/cache" "$N/solves"
+chown -R 1000:1000 "$E" "$N/IMAGE_VERSION" "$H/.config/niko" "$N/checkpoints" "$N/cache" "$N/solves"
 mkdir -p /var/log /var/tmp /var/cache/apt/archives/partial /var/lib/apt/lists/partial
 chmod 1777 /var/tmp
 

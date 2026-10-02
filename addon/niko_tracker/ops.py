@@ -784,6 +784,40 @@ def _download(url: str) -> bytes:
         return r.read()
 
 
+def _ver(s: str) -> tuple:
+    return tuple(int(x) for x in str(s).strip().split("."))
+
+
+def _update_engine_code(distro: str, info: dict, base: str) -> str:
+    """The release's engine code into an installed engine image (installer/engine) when that image
+    can run it; returns a note for the status line. A development engine, whose code is the project
+    folder itself, has no ENGINE_VERSION and is left alone."""
+    import tempfile
+
+    code = info.get("engine_code")
+    have = engine.query(distro, 'cat "$NIKO_REPO/ENGINE_VERSION" 2>/dev/null')
+    if not code or not have:
+        return ""
+    image = engine.query(distro, 'cat "$NIKO_HOME/IMAGE_VERSION" 2>/dev/null') or have
+    need = info.get("engine_image")
+    if need and _ver(need) > _ver(image):
+        return f"; the engine itself needs the new setup ({need}) from GitHub"
+    if _ver(have) >= _ver(info["version"]):
+        return ""
+    tmp = os.path.join(tempfile.gettempdir(), code)
+    with open(tmp, "wb") as fh:
+        fh.write(_download(f"{base}/{code}"))
+    ver = str(info["version"])
+    out = engine.query(distro, (
+        'set -e; E="$NIKO_REPO"; '
+        '[ -f "$NIKO_HOME/IMAGE_VERSION" ] || cp "$E/ENGINE_VERSION" "$NIKO_HOME/IMAGE_VERSION"; '
+        f'rm -rf "$E.new"; mkdir -p "$E.new"; tar -xzf {engine._q(engine.to_wsl(tmp))} -C "$E.new"; '
+        f'echo {ver} > "$E.new/ENGINE_VERSION"; '
+        'rm -rf "$E.old"; mv "$E" "$E.old"; mv "$E.new" "$E"; rm -rf "$E.old"; echo NIKO_OK'), timeout=300)
+    os.remove(tmp)
+    return f"; engine code {have} -> {ver}" if out.endswith("NIKO_OK") else "; the engine code update failed"
+
+
 class NIKO_OT_update(bpy.types.Operator):
     bl_idname = "niko.update"
     bl_label = "Update Niko Tracker"
@@ -797,8 +831,12 @@ class NIKO_OT_update(bpy.types.Operator):
         import shutil
         import zipfile
 
+        if context.scene.niko.running:
+            self.report({"ERROR"}, "Wait until the solve has finished, then update")
+            return {"CANCELLED"}
         p = prefs(context)
         root = p.repo_dir
+        note = ""
         here = os.path.dirname(os.path.abspath(__file__))
         cur = _version_of(os.path.join(here, "__init__.py"))
         src = os.path.join(root, "addon", "niko_tracker")
@@ -819,12 +857,13 @@ class NIKO_OT_update(bpy.types.Operator):
                     _install_zip(z, here)
             else:  # the GitHub releases
                 info = json.loads(_download(p.update_url).decode("utf-8"))
-                new = tuple(int(x) for x in str(info["version"]).split("."))
+                new = _ver(info["version"])
+                base = p.update_url.rsplit("/", 1)[0]
+                note = _update_engine_code(engine.resolve_distro(p.distro), info, base)
                 if cur is not None and new <= cur:
-                    context.scene.niko.status = f"Up to date ({'.'.join(map(str, cur))})"
+                    context.scene.niko.status = f"Up to date ({'.'.join(map(str, cur))}){note}"
                     self.report({"INFO"}, context.scene.niko.status)
                     return {"FINISHED"}
-                base = p.update_url.rsplit("/", 1)[0]
                 with zipfile.ZipFile(io.BytesIO(_download(f"{base}/{info['addon_zip']}"))) as z:
                     _install_zip(z, here)
         except Exception as e:  # network, missing files, a bad zip: say what, change nothing more
@@ -832,8 +871,8 @@ class NIKO_OT_update(bpy.types.Operator):
             return {"CANCELLED"}
         v = ".".join(map(str, new))
         was = ".".join(map(str, cur or ()))
-        context.scene.niko.status = (f"Updated {was} -> {v}: restart Blender to use it" if new != cur
-                                     else f"Up to date ({v}); files refreshed, restart Blender to reload")
+        context.scene.niko.status = (f"Updated {was} -> {v}{note}: restart Blender to use it" if new != cur
+                                     else f"Up to date ({v}){note}; files refreshed, restart Blender to reload")
         self.report({"INFO"}, context.scene.niko.status)
         return {"FINISHED"}
 

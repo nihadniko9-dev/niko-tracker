@@ -16,7 +16,7 @@
 
 #define AppName "Niko Tracker"
 #ifndef AppVersion
-  #define AppVersion "0.3.7"
+  #define AppVersion "0.3.8"
 #endif
 #define AppPublisher "Nihad Jihad (Niko)"
 
@@ -153,16 +153,23 @@ begin
     'About ' + EngineSizeText + ', checked piece by piece. This takes a while.', @OnDownloadProgress);
 end;
 
+// once per run; also when the page is never shown (silent install)
+procedure RunHardwareCheck;
+begin
+  if HwJson <> '' then Exit;
+  ExtractTemporaryFile('hardware_check.ps1');
+  RunCapture('powershell.exe', '-NoProfile -ExecutionPolicy Bypass -File "' +
+             ExpandConstant('{tmp}\hardware_check.ps1') + '"', HwJson);
+  // Windows PowerShell writes "ok":  true (two spaces), PowerShell 7 one
+  HwOk := (Pos('"ok":  true', String(HwJson)) > 0) or (Pos('"ok": true', String(HwJson)) > 0);
+end;
+
 procedure CurPageChanged(CurPageID: Integer);
 begin
   if CurPageID = HwPage.ID then
   begin
-    ExtractTemporaryFile('hardware_check.ps1');
-    RunCapture('powershell.exe', '-NoProfile -ExecutionPolicy Bypass -File "' +
-               ExpandConstant('{tmp}\hardware_check.ps1') + '"', HwJson);
+    RunHardwareCheck;
     HwPage.RichEditViewer.Lines.Text := String(HwJson);
-    // Windows PowerShell writes "ok":  true (two spaces), PowerShell 7 one
-    HwOk := (Pos('"ok":  true', String(HwJson)) > 0) or (Pos('"ok": true', String(HwJson)) > 0);
   end;
 end;
 
@@ -171,10 +178,10 @@ var
   Code: Integer;
 begin
   Result := False;
-  if MsgBox('The tracking engine runs in WSL2, which is not turned on yet.' + #13#10#13#10 +
+  if SuppressibleMsgBox('The tracking engine runs in WSL2, which is not turned on yet.' + #13#10#13#10 +
             'Setup can turn it on now (Windows asks for administrator permission). Afterwards restart ' +
             'the computer and run this setup again to install the engine.' + #13#10#13#10 +
-            'Turn on WSL2 now?', mbConfirmation, MB_YESNO) = IDYES then
+            'Turn on WSL2 now?', mbConfirmation, MB_YESNO, IDNO) = IDYES then
     Result := ShellExec('runas', 'wsl.exe', '--install --no-distribution', '', SW_SHOW, ewWaitUntilTerminated, Code);
 end;
 
@@ -183,10 +190,11 @@ var
   Have: String;
 begin
   Result := True;
+  if CurPageID = HwPage.ID then RunHardwareCheck;
   if (CurPageID = HwPage.ID) and (not HwOk) then
   begin
-    MsgBox('This computer cannot run the tracking engine yet. The "blockers" list above says why.',
-           mbError, MB_OK);
+    SuppressibleMsgBox('This computer cannot run the tracking engine yet. The "blockers" list above says why.',
+           mbError, MB_OK, IDOK);
     Result := False;
   end;
   if CurPageID = wpReady then
@@ -201,9 +209,9 @@ begin
     Have := InstalledEngineVersion;
     if Have = EngineVersion then Exit;
     if Have <> '' then
-      if MsgBox('Tracking engine ' + Have + ' is installed. Replacing it with ' + EngineVersion +
+      if SuppressibleMsgBox('Tracking engine ' + Have + ' is installed. Replacing it with ' + EngineVersion +
                 ' also removes the solves stored inside it (copy any you need first).' + #13#10#13#10 +
-                'Replace the engine now?', mbConfirmation, MB_YESNO) <> IDYES then Exit;
+                'Replace the engine now?', mbConfirmation, MB_YESNO, IDNO) <> IDYES then Exit;
     NeedEngine := True;
     DownloadPage.Clear;
     AddEngineParts(DownloadPage, ExpandConstant('{param:ENGINEURL|' + EngineBaseUrl + '}'));
@@ -234,7 +242,7 @@ begin
   Tar := ExpandConstant('{tmp}\') + EngineTarName;
   if not JoinEngineParts(Tar) then
   begin
-    MsgBox('The engine download could not be joined.', mbError, MB_OK);
+    SuppressibleMsgBox('The engine download could not be joined.', mbError, MB_OK, IDOK);
     Exit;
   end;
   if WslHasDistro(EngineDistro) then
@@ -248,11 +256,12 @@ begin
   if not Exec('wsl.exe', '--import ' + EngineDistro + ' "' + Dir + '" "' + Tar + '" --version 2', '', SW_HIDE,
               ewWaitUntilTerminated, Code) or (Code <> 0) then
   begin
-    MsgBox('WSL could not import the engine (code ' + IntToStr(Code) + ').', mbError, MB_OK);
+    SuppressibleMsgBox('WSL could not import the engine (code ' + IntToStr(Code) + ').', mbError, MB_OK, IDOK);
     Exit;
   end;
   DeleteFile(Tar);
   // the hardware profile decides the engine's memory settings
+  RunHardwareCheck;
   Hw := ExpandConstant('{tmp}\hardware.json');
   SaveStringToFile(Hw, HwJson, False);
   Exec(ExpandConstant('{cmd}'), '/C "wsl.exe -d ' + EngineDistro + ' --exec bash -c "cat > ' + EngineHome +
@@ -283,7 +292,7 @@ var
   Code: Integer;
 begin
   if (CurUninstallStep = usUninstall) and WslHasDistro(EngineDistro) then
-    if MsgBox('Also remove the tracking engine (WSL distribution ' + EngineDistro + ') and every solve ' +
-              'stored inside it?', mbConfirmation, MB_YESNO or MB_DEFBUTTON2) = IDYES then
+    if SuppressibleMsgBox('Also remove the tracking engine (WSL distribution ' + EngineDistro + ') and every solve ' +
+              'stored inside it?', mbConfirmation, MB_YESNO or MB_DEFBUTTON2, IDNO) = IDYES then
       Exec('wsl.exe', '--unregister ' + EngineDistro, '', SW_HIDE, ewWaitUntilTerminated, Code);
 end;
