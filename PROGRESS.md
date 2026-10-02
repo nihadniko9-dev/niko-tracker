@@ -46,6 +46,24 @@ simulation, test everything. His 0.3.9 work is commit 0b7012d; this builds on it
   (`scripts/dev/backfill_scale.py`), After Effects scripts re-exported.
 - **Name**: "Nihad Jihad" everywhere (licence, add-on, installer and its art, docs, exports, GitHub
   description); no "Niko" nickname.
+- **Published**: commit 49ab877 pushed; GitHub release v0.4.0 (add-on zip, NikoTracker-Setup-0.4.0.exe,
+  engine code; engine image stays 0.3.8: scipy / Open3D were in its da3 env since 2026-09-28).
+  The add-on's update button installed 0.4.0 from the live release (`addon_update_check.py github`,
+  which now steps 0.4.0 down to 0.3.99, not 0.4.-1). Add-on 0.4.0 installed in Nihad's Blender 5.2
+  (0.3.9 kept in niko_tracker_backups); his open Blender needs a restart.
+- **Nihad's meshes rebuilt** with 0.4.0, good quality (old ones kept as mesh_v039.ply, also in the
+  report copies); about 20 min each:
+  | clip | fused points | movers / far removed | triangles | pieces removed |
+  |---|---|---|---|---|
+  | test_01 | 755 771 | 84 005 / 29 473 | 1 645 303 | 834 |
+  | test_03 | 1 215 862 | 16 192 / 0 | 1 805 654 | 174 |
+  | test_04 | 940 392 | 65 278 / 41 493 | 1 909 218 | 352 |
+  | DJI 0036 | 1 310 911 | 167 560 / 12 405 | 1 999 999 (cap) | 698 |
+  | dji_0148 | 953 242 | 56 798 / 4 785 | 1 999 999 (cap) | 685 |
+  Each has a ~150k-triangle simulation copy. Renders old vs new through the solve camera:
+  `reports/mesh_test01_old_vs_new.png`, `reports/mesh_test04_old_vs_new.png` (sharper stonework and
+  paths, floating streaks gone); both meshes fit the solve's points equally (test_01: median
+  0.81 vs 0.83 % of scene size).
 - Checks: `pytest -m "not smoke"` 82 passed (new: tests/test_scale.py, tests/test_level.py); smoke
   1 passed in 209.7 s (0.272 px, 0.35 m/unit, models 37 % apart); Blender background check on
   clips 02 / 03 / 04 / DJI 0079 / no-masks: OK; size check OK; update check 0.4.0 -> 0.4.1 OK; GUI

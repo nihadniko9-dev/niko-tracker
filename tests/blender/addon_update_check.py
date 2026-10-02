@@ -40,7 +40,9 @@ if len(args) > 1 and args[1] == "github":
         p.distro = args[3] if len(args) > 3 else p.distro
     with urllib.request.urlopen(p.update_url, timeout=30) as r:
         rel = tuple(int(x) for x in json.load(r)["version"].split("."))
-    older = (rel[0], rel[1], rel[2] - 1)
+    # one step older: 0.4.2 -> 0.4.1, 0.4.0 -> 0.3.99, 1.0.0 -> 0.99.99
+    older = ((rel[0], rel[1], rel[2] - 1) if rel[2] else (rel[0], rel[1] - 1, 99) if rel[1]
+             else (rel[0] - 1, 99, 99))
     init = os.path.join(here, "__init__.py")
     text = open(init, encoding="utf-8").read().replace(f'"version": {tuple(cur)}', f'"version": {older}')
     open(init, "w", encoding="utf-8").write(text)
