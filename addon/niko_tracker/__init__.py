@@ -10,7 +10,7 @@ The engine runs in WSL2 (niko solve); Blender only reads its files and does no c
 bl_info = {
     "name": "Niko Tracker",
     "author": "Nihad Jihad",
-    "version": (0, 4, 0),
+    "version": (0, 5, 0),
     "blender": (5, 2, 0),
     "location": "Workspace tab 'Niko track' / 3D View > Sidebar > Niko",
     "description": "Automatic camera tracking with the Niko Tracker Engine",

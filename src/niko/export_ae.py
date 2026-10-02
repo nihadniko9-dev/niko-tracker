@@ -91,18 +91,23 @@ def level_up(trk: CameraTrack) -> tuple[np.ndarray, bool]:
     return up0, False
 
 
-def world_alignment(trk: CameraTrack, X: np.ndarray | None, rng) -> tuple[np.ndarray, np.ndarray, str]:
+def world_alignment(trk: CameraTrack, X: np.ndarray | None, rng,
+                    up: np.ndarray | None = None) -> tuple[np.ndarray, np.ndarray, str]:
     """(A, origin, how): rotation taking solve-world vectors to AE-world and the solve-world point
     that becomes AE's origin. Up -> -Y, the first camera's heading -> +Z.
     Up comes from the cameras' level right axes when the camera turns (level_up), else from the
     ground plane; the ground must lie below the cameras (2 % of the median depth), must not roll
     the camera more than 8 deg and, when it decides "up", must hold 5 % of the points (real clip
-    02, people on a sofa at telephoto: the best plane ran through the camera)."""
+    02, people on a sofa at telephoto: the best plane ran through the camera). `up`: a known up (the
+    drone's gimbal, niko.telemetry.true_up) used as is; the ground then only places the origin."""
     from .locktest import fit_ground
 
     v = np.nonzero(trk.valid)[0]
     Rc = trk.R_c2w[v]
-    up, level = level_up(trk)
+    if up is not None:
+        up, level = np.asarray(up, float) / np.linalg.norm(up), True
+    else:
+        up, level = level_up(trk)
     origin, how = trk.centers[v].mean(0), "cameras"
     if X is not None and len(X) >= 50:
         C = trk.centers[v]
@@ -311,7 +316,8 @@ def export_after_effects(solve_dir: str | Path, out: str | Path | None = None, n
     ok &= vis.sum(0) >= 3
     X, vis = X[ok], vis[:, ok]
 
-    A, origin, how = world_alignment(trk, None if rot_only else X, rng)
+    from .telemetry import for_solve, true_up
+    A, origin, how = world_alignment(trk, None if rot_only else X, rng, up=true_up(trk, for_solve(solve_dir)))
     f_med = float(np.median(trk.K[v, 0, 0]))
     if rot_only:
         s, origin = 1.0, trk.centers[v].mean(0)

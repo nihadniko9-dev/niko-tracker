@@ -97,6 +97,7 @@ Binary little-endian PLY, one vertex per 3D point, same world frame as `cameras.
 
 ```
 shot.json                     ingest metadata (below)
+telemetry.npz                 per-frame drone telemetry when the video has some (niko.telemetry, below)
 frames/000000.jpg …           full-res frames, JPG q95 (or .png)
 proxy/000000.jpg …            proxy, height 1080 (not upscaled if the source is smaller)
 masks/000000.png …            full-res uint8 masks, 255 = excluded
@@ -121,7 +122,9 @@ solve.json                    every stage, every candidate's score, selection, s
                   "frames": 150, "n_frames": 150,
                   "worst_frame": {"frame": 150, "mean_px": 0.49}},
   "lens_check": {"uncertain": false,
-                 "reasons": [],                // "depth_models" and / or "equally_good_fits"
+                 "reasons": [],                // "depth_models", "equally_good_fits", "hardly_turns"
+                 "max_turn_deg": 20.7,         // the camera's largest turn from the first frame;
+                                               // < 1 deg (it only translates) = "hardly_turns"
                  "selected_focal_px": 1492.6,
                  "log_ratio": 0.007,           // |log(focal_learned / focal_solved)|, > 1 = "depth_models"
                  "learned_focal_px": {"megasam": 1497.6, "da3": 1502.5},
@@ -129,15 +132,26 @@ solve.json                    every stage, every candidate's score, selection, s
                  // lenses more than 10 % apart = "equally_good_fits"
                  "spread": {"equally_good": {"colmap_global+ba": 1492.6, "colmap_global": 1495.1},
                             "focal_px": [1492.6, 1495.1], "spread_pct": 0.17}},
-  "known_lens": {"focal_mm": 28, "sensor_mm": 36, "focal_px": 1493.3},  // only with --focal-mm
+  // a known lens: --focal-mm ("source": "given") or the camera's profile ("source": "camera profile",
+  // with "camera", "uncertainty_pct", "calibrated"); lens_check is not run then
+  "known_lens": {"focal_mm": 28, "sensor_mm": 36, "focal_px": 1493.3, "source": "given"},
+  "camera": {"id": "DJI FC9113", "name": "DJI Air3s (DJI FC9113)", "key": "...", "source": "telemetry"},
+  "true_up": {"source": "gimbal", "up": [0.01, -0.99, 0.12]},  // up in the solve's world, when known
   // breaks in tracking: fewer than 50 SIFT tracks tie the frames before to the frames after
   // (clip frame numbers); [] = none found, absent = too few SIFT tracks to tell
   "track_gaps": [{"from_frame": 72, "to_frame": 80, "tracks": 0}],
-  // real-world size from the two single-image metric depth models (niko.scale); null for a tripod
-  // or when neither model ran. Used for blender.json only when "reliable" (models <= 50 % apart).
-  "metric_scale": {"metres_per_unit": 3.41, "agree_pct": 12.0, "reliable": true,
-                   "models": {"unidepth_v2": {"metres_per_unit": 3.2, "spread_pct": 9.1, "frames": 30, "source": "..."},
-                              "da3_nested": {"metres_per_unit": 3.6, "spread_pct": 7.4, "frames": 60, "source": "..."}}}
+  // real-world size. From the drone's telemetry when it has some and it is reliable (niko.scale.
+  // telemetry_scale: GPS fitted to the camera path, else the barometric altitude), else from the
+  // two single-image metric depth models ("source": "depth_models", reliable when <= 50 % apart);
+  // null for a tripod or when nothing measured it. blender.json is in metres only when "reliable".
+  "metric_scale": {"metres_per_unit": 12.86, "reliable": true, "source": "gps", "uncertainty_pct": 1.0,
+                   "telemetry": {"gps": {"metres_per_unit": 12.86, "fixes": 284, "extent_m": 143.2,
+                                         "residual_median_m": 0.26, "halves_apart_pct": 0.75,
+                                         "uncertainty_pct": 1.0, "reliable": true},
+                                 "altitude": {"metres_per_unit": 12.62, "readings": 127, "change_m": 17.6, "...": 0},
+                                 "gps_vs_altitude_pct": 1.84},
+                   "depth_models": {"metres_per_unit": 7.65, "agree_pct": 243.9, "reliable": false,
+                                    "models": {"unidepth_v2": {}, "da3_nested": {}}, "source": "depth_models"}}
 }
 ```
 
@@ -155,15 +169,35 @@ The values `import_blender.py` uses, for the add-on: `width`, `height`, `fps`, `
 `first_frame_file`, `points`, and `world`: a 4x4 taking the solve's world to a levelled Blender
 world (up from the cameras' level right axes when the camera turns, else from the ground plane;
 the ground on Z = 0; first camera looking along +Y), applied by the add-on as an empty
-that parents camera and points. `units` says what one Blender unit is: `{"kind": "metres_estimated",
-"metres_per_unit", "agree_pct"}` when the metric depth models agree (then 1 unit is about 1 m), else
-`{"kind": "arbitrary"}` (median depth 10 units). `median_depth` is the median camera-to-point depth
+that parents camera and points (with the drone's gimbal, up is true gravity: `true_up`). `units`
+says what one Blender unit is: `{"kind": "metres_gps" | "metres_altitude", "metres_per_unit",
+"uncertainty_pct"}` from the drone's telemetry, `{"kind": "metres_estimated", "metres_per_unit",
+"agree_pct"}` when the metric depth models agree (then 1 unit is about 1 m), else `{"kind":
+"arbitrary"}` (median depth 10 units). `median_depth` is the median camera-to-point depth
 in the solve's units (times the world's scale for Blender units).
 
 ### `real_scale.json` (add-on, optional)
 
-Written next to `selected/` by "Set real size" (two points or camera height): `factor` (multiplies
-`world`, cumulative), `how`. When present it wins over `units`.
+Written next to `selected/` by "Set real size" (two points or camera height) and "Set ground from
+points": `adjust`, the whole change as a 4x4 (row-major) put in front of `world`; `factor` (size,
+cumulative) and `how`; `ground` (e.g. "4 points, 0.3% off flat"). Files from 0.4.0 have only
+`factor` and `how` (then `adjust` = factor x identity). "Reset size and ground" renames the file to
+`real_scale.json.old`. When present it wins over `units`.
+
+### `telemetry.npz`
+
+DJI drones' per-frame telemetry ("DJI meta" stream, niko.telemetry.read_dji), one row per video
+frame, NaN where a value is missing: `lat`, `lon` (degrees), `alt` (GPS altitude, m), `rel_alt` (above
+take-off, m), `drone_pitch/roll/yaw`, `gimbal_pitch/roll/yaw` (degrees), `gimbal_q` [T,4] (w, x, y, z:
+camera body to NED), `zoom`; `info`: JSON with `proto`, `model`, `camera`, `width`, `height`, `fps`,
+`sensor_mm` (the video mode's sensor area). GPS arrives at 10 Hz and altitude at about 5 Hz, held
+between readings.
+
+### `$NIKO_HOME/camera_profiles.json`
+
+Lenses measured by `niko calibrate <solve>` (a calibration clip: the camera turns 15 deg or more),
+keyed by camera and video mode (`camera.key`): `{"name", "focal_px", "width", "uncertainty_pct",
+"how", "date"}`. A profile within 1.5 % is the known lens of every later solve from that camera.
 
 ### Scene mesh (`niko mesh <solve> --quality fast|good|high`)
 
@@ -182,7 +216,13 @@ Stereo points on moving things (the solve's masks) and far away are removed befo
   "frame_format": "jpg", "jpg_quality": 95,
   "proxy": {"width": 1920, "height": 1080, "scale_x": 0.5, "scale_y": 0.5},  // proxy px = full px * scale
   "lens": {"focal_mm": null, "focal_35mm": null, "sensor_width_mm": null, "source": "ffprobe|exif|none"},
-  "codec": "h264", "pix_fmt": "yuv420p", "rotation": 0
+  "codec": "h264", "pix_fmt": "yuv420p", "rotation": 0,
+  // the drone telemetry's summary (null without): source, proto, model, camera, sensor_mm, gps, altitude, gimbal, zoom
+  "telemetry": {"source": "dji_djmd", "model": "DJI Air3s", "camera": "DJI FC9113", "sensor_mm": [13.107, 7.372],
+                "gps": true, "altitude": true, "gimbal": true, "zoom": [1.0, 1.0], "...": 0},
+  // which camera made the clip (niko.camera.identify: telemetry, else make / model tags), or null
+  "camera": {"id": "DJI FC9113", "name": "DJI Air3s (DJI FC9113)",
+             "key": "DJI FC9113|3840x2160|sensor 13.107x7.372|zoom 1.00", "source": "telemetry"}
 }
 ```
 

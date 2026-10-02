@@ -48,8 +48,10 @@ REAL_SCALE = "real_scale.json"
 
 
 def read_real_scale(folder: str) -> dict:
-    """The size the user set in Blender ({"factor": k, "how": ...}; k multiplies the engine's
-    world), {} when none was set."""
+    """What the user set in Blender, {} when nothing was: "factor" (size, multiplies the engine's
+    world) and "how"; "ground" when the floor was set from picked points; "adjust", the whole change
+    as a 4x4 (row-major) applied in front of the engine's world (files from 0.4.0 have only the
+    factor)."""
     try:
         with open(os.path.join(selected_dir(folder), REAL_SCALE), encoding="utf-8") as fh:
             return json.load(fh)
@@ -57,11 +59,36 @@ def read_real_scale(folder: str) -> dict:
         return {}
 
 
-def write_real_scale(folder: str, factor: float, how: str) -> None:
+def user_adjust(folder: str) -> list | None:
+    """The user's change in front of the engine's world as a 4x4 (row-major), or None."""
+    r = read_real_scale(folder)
+    if r.get("adjust"):
+        return r["adjust"]
+    if "factor" in r:
+        k = float(r["factor"])
+        return [[k, 0, 0, 0], [0, k, 0, 0], [0, 0, k, 0], [0, 0, 0, 1]]
+    return None
+
+
+def write_real_scale(folder: str, factor: float | None = None, how: str | None = None,
+                     adjust: list | None = None, ground: str | None = None) -> None:
+    """Update the saved size / ground; fields left None keep their saved value."""
     import time
 
+    data = read_real_scale(folder)
+    for key, val in (("factor", factor), ("how", how), ("adjust", adjust), ("ground", ground)):
+        if val is not None:
+            data[key] = val
+    data["set"] = time.strftime("%Y-%m-%d %H:%M")
     with open(os.path.join(selected_dir(folder), REAL_SCALE), "w", encoding="utf-8") as fh:
-        json.dump({"factor": factor, "how": how, "set": time.strftime("%Y-%m-%d %H:%M")}, fh, indent=1)
+        json.dump(data, fh, indent=1)
+
+
+def clear_real_scale(folder: str) -> None:
+    """Back to the engine's size and ground; the file is renamed to .old, not deleted."""
+    path = os.path.join(selected_dir(folder), REAL_SCALE)
+    if os.path.exists(path):
+        os.replace(path, path + ".old")
 
 
 class Solve:
@@ -105,15 +132,29 @@ class Solve:
     def size_text(self) -> str:
         """What one Blender unit means in this scene."""
         real = read_real_scale(self.folder)
-        if real:
-            return f"Real size: {real.get('how', 'set by you')}"
+        if real.get("how"):
+            return f"Real size: {real['how']}"
         units = self.blender.get("units") or {}
+        if units.get("kind") in ("metres_gps", "metres_altitude"):
+            src = "GPS" if units["kind"] == "metres_gps" else "altitude"
+            unc = units.get("uncertainty_pct")
+            return f"Metres, from the drone's {src}" + (f" (±{unc:.0f}%)" if unc is not None else "")
         if units.get("kind") == "metres_estimated":
             apart = units.get("agree_pct")
             return ("Size: about metres (estimated" + (f", models {apart:.0f}% apart)" if apart is not None else ")"))
         if self.report.get("metric_scale"):
             return "Size unknown: the depth models disagree. Set it with a known distance or the camera height."
         return "Size unknown: set it with a known distance or the camera height."
+
+    def ground_text(self) -> str:
+        """Where the floor (Z = 0) comes from."""
+        real = read_real_scale(self.folder)
+        if real.get("ground"):
+            return f"Ground: set by you ({real['ground']})"
+        level = " Level from the drone's gimbal." if self.report.get("true_up") else ""
+        if self.blender.get("world_how") == "ground plane":
+            return "Ground: found automatically." + level + " Wrong? Pick 3+ floor points and set it."
+        return "Ground: not found (no clear floor). Pick 3+ floor points and set it."
 
     @property
     def average_px(self):
@@ -122,7 +163,11 @@ class Solve:
     def guidance(self):
         """Actionable checks, independent of a deceptively low average pixel error."""
         messages = []
-        if (self.report.get("lens_check") or {}).get("uncertain"):
+        lc = self.report.get("lens_check") or {}
+        if "hardly_turns" in lc.get("reasons", []):
+            messages.append("Lens not measured: the camera hardly turns (it only moves), so depth may be off. "
+                            "Calibrate this camera once, or enter its lens in Advanced settings.")
+        elif lc.get("uncertain"):
             messages.append("Lens uncertain: enter a known lens in Advanced settings, or check object sliding carefully.")
         if self.report.get("track_gaps"):
             messages.append("Tracking broke: inspect both sides of each marked gap before using the camera.")

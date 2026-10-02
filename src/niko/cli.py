@@ -116,6 +116,71 @@ def _export_ae(args) -> int:
     return 0
 
 
+def _calibrate(args) -> int:
+    """Measure the camera's lens from a finished solve of a calibration clip (the camera turns a lot)
+    and remember it as the camera's profile (niko.camera)."""
+    import json
+    from pathlib import Path
+
+    import numpy as np
+
+    from .camera import PROFILE_MAX_UNCERTAINTY_PCT, save_profile
+    from .camio import CameraTrack
+    from .telemetry import for_solve, gimbal_rotations
+
+    d = Path(args.solve_dir)
+    shot = json.loads((d / "shot.json").read_text())
+    rep = json.loads((d / "solve.json").read_text())
+    cam = shot.get("camera")
+    if not cam:
+        print("This clip does not say which camera made it (no drone telemetry, no make / model in the file). "
+              "Use the camera's original file, not a re-exported one.", file=sys.stderr)
+        return 2
+    trk = CameraTrack.load(d / "selected" / "cameras.json")
+    v = np.nonzero(trk.valid)[0]
+    f = trk.K[v, 0, 0]
+    focal = float(np.median(f))
+    if np.ptp(f) > 0.005 * focal:
+        print(f"The focal changes during this clip ({f.min():.0f}-{f.max():.0f} px: zoom?). A calibration clip "
+              "keeps one lens.", file=sys.stderr)
+        return 2
+
+    def turn(Ra, Rb):
+        return float(np.degrees(np.arccos(np.clip((np.trace(Ra.T @ Rb) - 1) / 2, -1, 1))))
+
+    turns = [turn(trk.R_c2w[v[0]], trk.R_c2w[i]) for i in v]
+    far = int(v[int(np.argmax(turns))])
+    t_max = max(turns)
+    if t_max < args.min_turn:
+        print(f"The camera turns only {t_max:.1f} deg. A calibration clip turns at least {args.min_turn:g} deg: "
+              "hover (or stand still) and turn slowly, a full circle is best, with buildings or trees around.",
+              file=sys.stderr)
+        return 2
+    unc = [0.5]
+    spread = (rep.get("lens_check") or {}).get("spread") or {}
+    if spread.get("spread_pct") is not None:
+        unc.append(spread["spread_pct"] / 2)
+    ratio = None
+    tel = for_solve(d)
+    Rg = gimbal_rotations(tel) if tel else None
+    if Rg is not None and far < len(Rg) and np.all(np.isfinite(Rg[[v[0], far]])):
+        g = turn(Rg[v[0]], Rg[far])
+        if g > 1.0:
+            ratio = turns[int(np.argmax(turns))] / g
+            unc.append(100.0 * abs(ratio - 1))
+    u = max(unc)
+    how = f"calibrated from {d.name}: the camera turned {t_max:.0f} deg" + (
+        f", the gimbal agrees within {100 * abs(ratio - 1):.1f} %" if ratio is not None else "")
+    save_profile(cam, focal, shot["width"], u, how)
+    print(f"{cam['name']}, {shot['width']}x{shot['height']}: focal {focal:.1f} px (+-{u:.1f} %)")
+    if u <= PROFILE_MAX_UNCERTAINTY_PCT:
+        print("Saved: every new clip from this camera and video mode is solved with this lens.")
+    else:
+        print(f"Saved, but not used automatically: it needs +-{PROFILE_MAX_UNCERTAINTY_PCT:g} % or better. "
+              "Turn more (a full circle) and keep the camera level.")
+    return 0
+
+
 def _mesh(args) -> int:
     from .mesh import build_mesh
 
@@ -168,6 +233,12 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("-o", "--out", help="jsx path (default: <solve_dir>/selected/niko_after_effects.jsx)")
     p.add_argument("--nulls", type=int, default=24, help="number of 3D track nulls")
     p.set_defaults(func=_export_ae)
+
+    p = sub.add_parser("calibrate", help="measure the camera's lens from a solved calibration clip (the camera "
+                                         "turns, e.g. a slow full circle) and use it for every later clip")
+    p.add_argument("solve_dir", help="output folder of niko solve")
+    p.add_argument("--min-turn", type=float, default=15.0, help="least turn in degrees (default 15)")
+    p.set_defaults(func=_calibrate)
 
     p = sub.add_parser("mesh", help="editable 3D mesh of the static scene (multi-view stereo on the solve)")
     p.add_argument("solve_dir", help="output folder of niko solve")

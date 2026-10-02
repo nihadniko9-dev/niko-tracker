@@ -7,7 +7,7 @@ import time
 
 import bpy
 import numpy as np
-from mathutils import Matrix
+from mathutils import Matrix, Vector
 
 from . import engine, solve_io
 
@@ -100,8 +100,8 @@ def build_scene(context, s: solve_io.Solve):
 
     world = bpy.data.objects.new("Niko world", None)
     world.empty_display_type = "PLAIN_AXES"
-    k = float(solve_io.read_real_scale(s.folder).get("factor", 1.0))  # a size set in Blender
-    world.matrix_world = Matrix.Scale(k, 4) @ Matrix(d.get("world") or Matrix.Identity(4))
+    adjust = solve_io.user_adjust(s.folder)  # size / ground set in Blender
+    world.matrix_world = (Matrix(adjust) if adjust else Matrix.Identity(4)) @ _engine_world(d)
     coll.objects.link(world)
 
     cam_data = bpy.data.cameras.new("Niko camera")
@@ -158,6 +158,16 @@ def build_scene(context, s: solve_io.Solve):
         _points_modifier(pts, 2.5 * depth / f_px)
         pts.hide_render = True
     scene.frame_set(d["frame_start"])
+
+
+def _engine_world(d) -> Matrix:
+    return Matrix(d.get("world") or Matrix.Identity(4))
+
+
+def _save_adjust(folder, world, d, **fields):
+    """Save the world empty's whole change from the engine's world (size, ground)."""
+    adjust = world.matrix_world @ _engine_world(d).inverted()
+    solve_io.write_real_scale(folder, adjust=[list(r) for r in adjust], **fields)
 
 
 def _fit_camera_to_scale(cam_data, world, d):
@@ -774,11 +784,103 @@ class NIKO_OT_set_size(bpy.types.Operator):
         old = float(solve_io.read_real_scale(s.folder).get("factor", 1.0))
         how = f"{why} = {self.metres:g} m"
         try:
-            solve_io.write_real_scale(s.folder, old * k, how)
+            _save_adjust(s.folder, world, s.blender, factor=old * k, how=how)
         except OSError as e:
             self.report({"WARNING"}, f"Scaled, but could not save it with the solve: {e}")
         n.status = f"Real size set: {how} (x{k:.4g}). 1 Blender unit = 1 m"
         self.report({"INFO"}, n.status)
+        _redraw(context)
+        return {"FINISHED"}
+
+
+def plane_fit(pts):
+    """(centre, unit normal, RMS distance of the points from the plane) of 3+ points, or None when
+    they are in a line."""
+    P = np.array([tuple(p) for p in pts], float)
+    c = P.mean(0)
+    w, V = np.linalg.eigh((P - c).T @ (P - c) / len(P))
+    if w[1] <= 1e-12 * max(w[2], 1e-30):
+        return None
+    return Vector(c), Vector(V[:, 0]).normalized(), float(np.sqrt(max(w[0], 0.0)))
+
+
+class NIKO_OT_set_ground(bpy.types.Operator):
+    bl_idname = "niko.set_ground"
+    bl_label = "Set ground from points"
+    bl_description = ("Make the floor you picked the ground: 3 or more selected points on it ('Niko points' in "
+                      "Edit Mode, the scene mesh's vertices, or empties) become Z = 0, level, with the origin in "
+                      "their middle. Camera height and simulations then use this floor")
+    bl_options = {"REGISTER", "UNDO"}
+
+    def _points(self, context):
+        ob, pts = selected_points(context)
+        if len(pts) < 3:
+            sel = [o for o in context.selected_objects if o.type == "EMPTY"]
+            if len(sel) >= 3:
+                pts = [o.matrix_world.translation.copy() for o in sel]
+        return pts
+
+    def execute(self, context):
+        n = context.scene.niko
+        world = bpy.data.objects.get("Niko world")
+        s = solve_io.get(n.solve_dir)
+        if world is None or s is None:
+            self.report({"ERROR"}, "Load a solve first")
+            return {"CANCELLED"}
+        pts = self._points(context)
+        if len(pts) < 3:
+            self.report({"ERROR"}, "Select 3 or more points on the floor (Edit Mode on 'Niko points') or 3 empties")
+            return {"CANCELLED"}
+        fit = plane_fit(pts)
+        if fit is None:
+            self.report({"ERROR"}, "The points are in a line: pick points spread over the floor")
+            return {"CANCELLED"}
+        c, normal, rms = fit
+        cam = context.scene.camera
+        if cam is not None and normal.dot(cam.matrix_world.translation - c) < 0:
+            normal = -normal  # up is the side the camera is on
+        size = max((Vector(p) - c).length for p in pts)
+        # the smallest turn that levels the floor keeps the scene's heading
+        G = normal.rotation_difference(Vector((0, 0, 1))).to_matrix().to_4x4() @ Matrix.Translation(-c)
+        world.matrix_world = G @ world.matrix_world
+        off = 100 * rms / max(size, 1e-9)
+        how = f"{len(pts)} points, {off:.1f}% off flat"
+        try:
+            _save_adjust(s.folder, world, s.blender, ground=how)
+        except OSError as e:
+            self.report({"WARNING"}, f"Ground set, but could not save it with the solve: {e}")
+        n.status = f"Ground set from {len(pts)} points ({off:.1f}% off a flat plane)"
+        if off > 5.0:
+            n.status += ": they are not on one flat floor, check them"
+        self.report({"INFO"}, n.status)
+        _redraw(context)
+        return {"FINISHED"}
+
+
+class NIKO_OT_reset_adjust(bpy.types.Operator):
+    bl_idname = "niko.reset_adjust"
+    bl_label = "Reset size and ground"
+    bl_description = ("Go back to the engine's own size and ground (your setting is kept as "
+                      "real_scale.json.old next to the solve)")
+    bl_options = {"REGISTER", "UNDO"}
+
+    def execute(self, context):
+        n = context.scene.niko
+        world = bpy.data.objects.get("Niko world")
+        s = solve_io.get(n.solve_dir)
+        if world is None or s is None:
+            self.report({"ERROR"}, "Load a solve first")
+            return {"CANCELLED"}
+        try:
+            solve_io.clear_real_scale(s.folder)
+        except OSError as e:
+            self.report({"ERROR"}, f"Could not reset: {e}")
+            return {"CANCELLED"}
+        world.matrix_world = _engine_world(s.blender)
+        cam = bpy.data.objects.get("Niko camera")
+        if cam is not None:
+            _fit_camera_to_scale(cam.data, world, s.blender)
+        n.status = "Size and ground: back to the engine's"
         _redraw(context)
         return {"FINISHED"}
 
@@ -1252,7 +1354,7 @@ def _ensure_tab():
 
 
 _classes = (NIKO_OT_workspace, NIKO_OT_solve, NIKO_OT_cancel, NIKO_OT_load, NIKO_OT_rebuild,
-            NIKO_OT_jump_worst, NIKO_OT_goto_frame, NIKO_OT_masks_all, NIKO_OT_set_size, NIKO_OT_sim_mesh,
+            NIKO_OT_jump_worst, NIKO_OT_goto_frame, NIKO_OT_masks_all, NIKO_OT_set_size, NIKO_OT_set_ground, NIKO_OT_reset_adjust, NIKO_OT_sim_mesh,
             NIKO_OT_locktest, NIKO_OT_export_ae, NIKO_OT_open_folder, NIKO_OT_empties,
             NIKO_OT_edit_points, NIKO_OT_update, NIKO_OT_mesh, NIKO_OT_project)
 

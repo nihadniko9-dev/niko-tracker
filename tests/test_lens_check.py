@@ -9,7 +9,9 @@ from niko.pipeline.solve import lens_check, lens_spread
 def cam(f: float, n: int = 20, stride: int = 1) -> CameraTrack:
     c = CameraTrack.empty("x", 1920, 1080, 25.0, 1, n)
     c.K[:] = [[f, 0, 960], [0, f, 540], [0, 0, 1]]
-    c.R[:] = np.eye(3)
+    for i in range(n):  # a 10 deg pan: enough turn for the lens to be measurable (MIN_TURN_DEG)
+        a = np.radians(10.0 * i / (n - 1))
+        c.R[i] = [[np.cos(a), 0, -np.sin(a)], [0, 1, 0], [np.sin(a), 0, np.cos(a)]]
     c.t[:] = 0
     c.dist[:] = 0
     c.valid[::stride] = True

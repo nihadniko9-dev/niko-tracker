@@ -228,6 +228,12 @@ class NIKO_PT_result(_Base, bpy.types.Panel):
                 _pair(col, "  depth models say", f"{mm[0]:.0f} mm" if mm[-1] - mm[0] < 0.5 else
                       f"{mm[0]:.0f} - {mm[-1]:.0f} mm")
         _pair(col, "Camera", s.camera_kind)
+        made = (s.report.get("camera") or {}).get("name")
+        if made:
+            _pair(col, "Shot with", made.replace("DJI DJI ", "DJI "))
+        known = s.report.get("known_lens") or {}
+        if known.get("source") == "camera profile":
+            _pair(col, "Lens from", "camera profile")
         if context.scene.niko.advanced:
             _pair(col, "Picked", s.selected)
         f, v = s.worst_frame()
@@ -306,6 +312,11 @@ class NIKO_PT_use(_Base, bpy.types.Panel):
         row = size.row(align=True)
         row.operator("niko.set_size", text="From two points", icon="DRIVER_DISTANCE").mode = "POINTS"
         row.operator("niko.set_size", text="Camera height", icon="OUTLINER_OB_CAMERA").mode = "HEIGHT"
+        for chunk in _wrap(s.ground_text(), 42):
+            size.label(text=chunk)
+        row = size.row(align=True)
+        row.operator("niko.set_ground", icon="AXIS_TOP")
+        row.operator("niko.reset_adjust", text="", icon="LOOP_BACK")
         col = lay.column(align=True)
         col.scale_y = 1.3
         col.operator("niko.rebuild", icon="OUTLINER_OB_CAMERA")

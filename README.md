@@ -36,7 +36,8 @@ uv run niko solve <clip|image folder|bench shot> -o <out> [--prompts person,car]
                                                      # ingest -> masks -> tracks -> candidates -> refine -> select -> export
 uv run niko locktest <out> [--scale 0.5]             # lock-test MP4: held-out tracks drawn over the footage
 uv run niko export-ae <out>                          # After Effects .jsx (also written by every solve)
-uv run niko mesh <out> [--images 40] [--size 1280]   # editable scene mesh (multi-view stereo on the solve)
+uv run niko mesh <out> [--quality good]             # editable scene mesh (multi-view stereo on the solve)
+uv run niko calibrate <out>                          # measure the camera's lens from a calibration clip, once
 uv run niko bench generate [--set synthetic_v1] [--preview] [--shots a,b]
 uv run niko bench run --name <run> [--methods ...] [--shots a,b] [--reuse] [--force]
 uv run niko bench report <run>                       # runs/<run>/report.html + metrics.csv, copied to reports/<run>
@@ -49,8 +50,20 @@ File > Scripts > Run Script File), and `<out>/solve.json` with every stage, ever
 score, the average tracking error and the lens check.
 
 `--focal-mm`: give the lens when you know it (camera metadata, lens barrel; phones and drones: the
-35 mm equivalent with the default 36 mm sensor). A camera that only moves straight ahead cannot
-measure its lens; the solve then says "lens uncertain" and this option fixes it.
+35 mm equivalent with the default 36 mm sensor). A camera that only moves and hardly turns (under
+1 degree: a forward dolly, a drone flying sideways on a steady gimbal) cannot measure its lens; the
+solve then says "lens not measured". Better than typing a lens: calibrate the camera once.
+
+Cameras: the engine reads which camera made the clip (a DJI drone's telemetry names the camera
+module, its video mode and zoom; phones write a make and model). `niko calibrate <out>` on a solved
+calibration clip (hover or stand still and turn slowly, a full circle is best) measures the lens and
+keeps it in `$NIKO_HOME/camera_profiles.json`; every later clip from that camera and video mode is
+then solved with it (when measured to 1.5 % or better; DJI clips are cross-checked with the gimbal).
+
+Drone telemetry (DJI): GPS, altitude and gimbal angles recorded in the video are read automatically.
+The camera path is fitted to the GPS track for the real size (Nihad's Air 3S clips: within 1 %, the
+scene's camera height changes match the barometer to 1-4 %), and the gimbal gives true gravity for
+the level. Without GPS the altitude changes give the size.
 
 ## Blender add-on
 
@@ -59,10 +72,13 @@ The interface guides you through choosing a video, solving the camera and checki
 Before solving, choose what to ignore: nothing (the masks step is skipped), some or all moving things. Advanced settings reveal the lens controls. Low pixel error is not a guarantee:
 review lens/tracking warnings and check for sliding before placing your final 3D objects.
 
-Real size: a solve from one video has no unit. The engine estimates metres from two single-image
-depth models (UniDepth, DA3) and uses it only when they agree within 50 %; otherwise set it in
-Blender (Use your camera > Real size: two points at a known distance, or the camera height). The
-camera, points and mesh scale together and the size is saved with the solve (`real_scale.json`).
+Real size: a solve from one video has no unit. With drone telemetry the engine takes metres from the
+GPS (or the altitude); otherwise it estimates them from two single-image depth models (UniDepth,
+DA3) and uses that only when they agree within 50 %. In Blender (Use your camera > Real size) set it
+exactly from two points at a known distance or the camera height, and set the ground from 3 or more
+points on the floor (Set ground from points: they become Z = 0, level). Camera, points and mesh
+follow together, the setting is saved with the solve (`real_scale.json`), and the reset button goes
+back to the engine's own size and ground.
 
 Scene mesh (`niko mesh <solve> --quality fast|good|high`): full-resolution frames for good/high,
 points on moving things and far junk removed, floating pieces dropped, small holes filled, light

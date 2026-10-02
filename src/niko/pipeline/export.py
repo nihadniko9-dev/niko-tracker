@@ -114,7 +114,7 @@ def median_depth(trk: CameraTrack, X: np.ndarray | None) -> float | None:
 
 
 def blender_world(trk: CameraTrack, ply: Path | None, target_depth: float = 10.0,
-                  metres_per_unit: float | None = None) -> tuple[list, str]:
+                  metres_per_unit: float | None = None, up: np.ndarray | None = None) -> tuple[list, str]:
     """4x4 (row-major) taking the solve's world to a levelled Blender world (export_ae.world_alignment):
     up on +Z, the first camera looking along +Y, origin on the ground under the scene; in metres when `metres_per_unit` is known (niko.scale), else scaled so the median point
     depth is `target_depth` units. The add-on puts it on an empty that parents the camera and
@@ -124,7 +124,7 @@ def blender_world(trk: CameraTrack, ply: Path | None, target_depth: float = 10.0
 
     rng = np.random.default_rng(0)
     X = read_ply_xyz(ply) if ply is not None and Path(ply).exists() else None
-    A, origin, how = world_alignment(trk, X, rng)  # rows: right, down, forward (After Effects axes)
+    A, origin, how = world_alignment(trk, X, rng, up=up)  # rows: right, down, forward (After Effects axes)
     B = np.stack([A[0], A[2], -A[1]])  # Blender: X right, Y forward, Z up
     s = 1.0
     depth = median_depth(trk, X)
@@ -138,9 +138,21 @@ def blender_world(trk: CameraTrack, ply: Path | None, target_depth: float = 10.0
     return M.tolist(), how
 
 
+def units_of(metric: dict | None) -> tuple[float | None, dict]:
+    """(metres per unit or None, blender.json "units") for a metric scale to be used (reliable only)."""
+    mpu = (metric or {}).get("metres_per_unit") if (metric or {}).get("reliable") else None
+    if mpu and metric.get("source") in ("gps", "altitude"):
+        return mpu, {"kind": f"metres_{metric['source']}", "metres_per_unit": mpu,
+                     "uncertainty_pct": metric.get("uncertainty_pct")}
+    if mpu:
+        return mpu, {"kind": "metres_estimated", "metres_per_unit": mpu, "agree_pct": metric.get("agree_pct")}
+    return None, {"kind": "arbitrary"}
+
+
 def export_solve(trk: CameraTrack, points_src: Path | None, out_dir: Path, frames_dir: Path,
-                 first_frame_file: str, metric: dict | None = None) -> dict:
-    """metric: niko.scale's estimate; the Blender scene is then in metres (approximately)."""
+                 first_frame_file: str, metric: dict | None = None, up: np.ndarray | None = None) -> dict:
+    """metric: the solve's metres per unit (telemetry or depth models); the Blender scene is then in
+    metres. up: true up in the solve's world (the drone's gimbal), for the levelling."""
     out_dir.mkdir(parents=True, exist_ok=True)
     if points_src is not None and Path(points_src).exists():
         shutil.copyfile(points_src, out_dir / "points.ply")
@@ -154,12 +166,10 @@ def export_solve(trk: CameraTrack, points_src: Path | None, out_dir: Path, frame
     else:
         note = ""
     ply = out_dir / "points.ply" if trk.points else None
-    mpu = (metric or {}).get("metres_per_unit")
-    world, world_how = blender_world(trk, ply, metres_per_unit=mpu)
+    mpu, units = units_of(metric)
+    world, world_how = blender_world(trk, ply, metres_per_unit=mpu, up=up)
     from ..plyio import read_ply_xyz
     depth = median_depth(trk, read_ply_xyz(ply)) if ply is not None and ply.exists() else None
-    units = ({"kind": "metres_estimated", "metres_per_unit": mpu, "agree_pct": metric.get("agree_pct")}
-             if mpu else {"kind": "arbitrary"})
     data = {"name": f"niko_{trk.name or 'shot'}", "method": trk.method, "width": trk.width,
             "height": trk.height, "fps": trk.fps, "fps_int": int(round(trk.fps)),
             "frame_start": trk.frame_start, "sensor_width": 36.0, **aspect, "frames": frames,

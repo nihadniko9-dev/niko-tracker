@@ -1,7 +1,8 @@
-"""Give finished solves the real-size estimate and the levelled world of 0.4 (niko.scale,
-export_ae.world_alignment): solve.json -> metric_scale, selected/blender.json -> world (ground and
-up, in metres when known), units, median_depth, and import_blender.py to match. The camera keys are
-not touched; only the levelled world they hang under changes, as a new solve would export it.
+"""Give finished solves the real size and levelled world a new solve would export: solve.json ->
+metric_scale (the drone's GPS / altitude when the video has telemetry, else the depth models) and
+true_up (the drone's gimbal), selected/blender.json -> world, units, median_depth, and
+import_blender.py to match; the video's telemetry is kept as telemetry.npz. The camera keys are not
+touched; only the levelled world they hang under changes.
 
 usage: python scripts/dev/backfill_scale.py <solve_dir> [--also <flat copy folder> ...] ...
   --also: a flat copy of selected/ (e.g. reports/test_shots/03) to patch the same way.
@@ -13,10 +14,13 @@ from pathlib import Path
 
 import numpy as np
 
+from niko.camera import identify
 from niko.camio import CameraTrack
-from niko.pipeline.export import BPY_TEMPLATE, blender_world, median_depth
+from niko.pipeline.export import BPY_TEMPLATE, blender_world, median_depth, units_of
+from niko.pipeline.solve import _metric_scale
 from niko.plyio import read_ply_xyz
-from niko.scale import estimate_metric_scale
+from niko.pipeline.ingest import probe_video
+from niko.telemetry import TELEMETRY_FILE, for_solve, save, summary, true_up
 
 
 def main():
@@ -31,35 +35,47 @@ def main():
     for d, copies in jobs:
         sel = d / "selected"
         trk = CameraTrack.load(sel / "cameras.json")
-        f = d / "sift" / "sift_tracks.npz"
-        src = np.load(f) if f.exists() else np.load(d / "tracks" / "tracks.npz")
-        est = estimate_metric_scale(trk, src["xy"], src["vis"], d)
+        tel = for_solve(d)
+        if tel is not None and not (d / TELEMETRY_FILE).exists():
+            save(d / TELEMETRY_FILE, tel)
+        shot = json.loads((d / "shot.json").read_text())
+        if "camera" not in shot:  # solves from before 0.5: which camera made the clip
+            tags = {}
+            if Path(shot["source"]).is_file():
+                tags = probe_video(Path(shot["source"])).get("camera_tags", {})
+            shot["telemetry"] = summary(tel) if tel else None
+            shot["camera"] = identify(tags, shot["telemetry"], shot["width"], shot["height"])
+            (d / "shot.json").write_text(json.dumps(shot, indent=1), encoding="utf-8")
+        metric = _metric_scale(trk, d, dict(np.load(d / "tracks" / "tracks.npz")))
+        up = true_up(trk, tel)
         ply = sel / "points.ply"
         X = read_ply_xyz(ply) if ply.exists() else None
-        mpu = (est or {}).get("metres_per_unit") if (est or {}).get("reliable") else None
-        world, how = blender_world(trk, ply if ply.exists() else None, metres_per_unit=mpu)
-        units = ({"kind": "metres_estimated", "metres_per_unit": mpu, "agree_pct": est.get("agree_pct")}
-                 if mpu else {"kind": "arbitrary"})
+        mpu, units = units_of(metric)
+        world, how = blender_world(trk, ply if ply.exists() else None, metres_per_unit=mpu, up=up)
         for folder in [sel, *copies]:
             b = json.loads((folder / "blender.json").read_text())
             b.update({"world": world, "world_how": how, "units": units, "median_depth": median_depth(trk, X)})
             (folder / "blender.json").write_text(json.dumps(b))
             if (folder / "import_blender.py").exists():
                 (folder / "import_blender.py").write_text(BPY_TEMPLATE.replace("__DATA__", json.dumps(b)), encoding="utf-8")
-            sj = folder / "solve.json" if (folder / "solve.json").exists() else d / "solve.json"
+        for sj in {d / "solve.json", *[c / "solve.json" for c in copies if (c / "solve.json").exists()]}:
             r = json.loads(sj.read_text())
-            if est:
-                r["metric_scale"] = est
+            r["camera"] = shot.get("camera")
+            if metric:
+                r["metric_scale"] = metric
+            if up is not None:
+                r["true_up"] = {"source": "gimbal", "up": [float(x) for x in up]}
+            else:
+                r.pop("true_up", None)
             sj.write_text(json.dumps(r, indent=1, default=str))
-        if (d / "solve.json").exists() and est:
-            r = json.loads((d / "solve.json").read_text())
-            r["metric_scale"] = est
-            (d / "solve.json").write_text(json.dumps(r, indent=1, default=str))
-        models = {k: round(v["metres_per_unit"], 4) for k, v in ((est or {}).get("models") or {}).items()}
-        verdict = "no estimate (tripod or no depth model)" if not est else (
-            f"{mpu:.4g} m/unit, used" if mpu else f"{est['metres_per_unit']:.4g} m/unit, NOT used (models disagree)")
-        print(f"{d.name}: {verdict} "
-              f"{models} apart {(est or {}).get('agree_pct')} %; patched {1 + len(copies)} folder(s)", flush=True)
+        src = (metric or {}).get("source")
+        if mpu:
+            verdict = f"{mpu:.4g} m/unit from {src}" + (f" +-{metric.get('uncertainty_pct')} %" if src != "depth_models" else
+                                                         f" (models {metric.get('agree_pct')} % apart)")
+        else:
+            verdict = "size unknown"
+        print(f"{d.name}: camera {(shot.get('camera') or {}).get('name')}; {verdict}; level from {'the gimbal' if up is not None else how}; "
+              f"patched {1 + len(copies)} folder(s)", flush=True)
 
 
 if __name__ == "__main__":

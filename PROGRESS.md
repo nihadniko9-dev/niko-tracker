@@ -2,6 +2,64 @@
 
 Newest first. Every claim here was run on this machine; the command and the numbers are listed.
 
+## 2026-10-03 — 0.5.0: drone telemetry (GPS size, gimbal level), cameras and calibration, set ground
+
+Nihad: "do the next phases too", measurements very accurate, recognise every camera, test real size
+at every scale.
+
+- **DJI telemetry** (`niko.telemetry`). Every DJI clip of Nihad's carries a "DJI meta" (djmd) data
+  stream: one protobuf per video frame (`dvtm_Air3s.proto`). Decoded without a schema; field paths
+  checked for sense: GPS in radians (Zakho, 37.14 N 42.69 E), GPS speed = the speed field (4.6 m/s),
+  gimbal yaw from the quaternion = the yaw field (84.2 deg), sensor area 13.107 x 7.372 mm = the 16:9
+  part of the 1-inch IMX989 (named in the debug stream), camera module FC9113, zoom 1.0. Read in
+  under a second; kept with the solve as `telemetry.npz`, summary and camera in shot.json.
+- **Real size from GPS** (`niko.scale.telemetry_scale`): the camera path fitted to the GPS track
+  (similarity), checked by the residual, the two halves of the flight and the barometer.
+  `scripts/dev/gps_check.py`:
+  | clip | GPS | fit residual | halves | barometer | depth models (0.4) |
+  |---|---|---|---|---|---|
+  | 0079 | 342.9 m/unit, 133 m path | 0.36 m | 1.1 % | flat (0.1 m) | 140 (2.4x off, rejected) |
+  | 0148 | 12.86 m/unit, 143 m path | 0.26 m | 0.75 % | 12.62, 1.8 % apart | 7.65 (1.7x off, rejected) |
+  | 0036 | no GPS | - | - | 13.16, +-14 % (halves 28 % apart) | 3.42 (rejected) |
+  Independent check in the levelled Blender world: the camera's height changes against the
+  barometer: 0148 17.75 m vs 17.6 m (spread 0.24 m), 0036 28.2 m vs 29.3 m (spread 0.52 m); the
+  camera's height above the scene's ground is within 1.1-2.3 m of the drone's height above its
+  take-off point on all three clips. Uncertainty floor 1 %; used up to 15 %.
+- **True up from the gimbal**: the solves' camera orientations match the gimbal's to 0.05 / 0.13 /
+  0.38 deg (median, after one fixed rotation): the tracking itself is that accurate. The gimbal's
+  gravity replaces the estimated up (which was 0.98 / 2.41 / 2.77 deg off it). Also in the After
+  Effects export.
+- **Lens**: the gimbal also measures the lens when the camera turns (`scripts/dev/lens_sweep.py`):
+  0036 (21 deg tilt): the footage prefers 2662-2780 px, the gimbal's turn 2940 px; 0148 (0.9 deg):
+  footage 2654-2760, GPS path 2760. A re-solve of 0079 with the "24 mm" lens (2662 px instead of 2979)
+  fits the footage, the gimbal and the GPS exactly as well (0.552 vs 0.560 px, 0.06 vs 0.05 deg,
+  0.37 vs 0.36 m): a camera that only translates does not measure its lens (synthetic: every shot
+  turning >= 1.09 deg has the focal within 1.5 %; dolly_forward 0.03 deg 86 % off). So:
+  - lens check: new reason `hardly_turns` (< 1 deg); add-on: "Lens not measured: the camera hardly
+    turns". Nihad's 0079, 0148, 01, 02 now say so; 0036 and 04 (15-21 deg) do not.
+  - `niko.camera`: the clip's camera (DJI telemetry, else make / model tags) and camera profiles
+    (`$NIKO_HOME/camera_profiles.json`, per camera and video mode). `niko calibrate <solve>` measures
+    the lens from a clip that turns >= 15 deg, cross-checked with the gimbal; a profile within 1.5 %
+    becomes the known lens of every later solve. 0036 gives +-5.5 % (the gimbal disagrees): kept, not
+    used. Nihad's 01-04 are re-exported files without camera tags.
+- **Set ground from points** (add-on): 3+ selected points (Niko points, mesh vertices or empties)
+  become Z = 0, level, origin in their middle; saved with the size as one matrix (`adjust` in
+  real_scale.json, 0.4.0 files still load); **Reset size and ground**. `tests/blender/
+  addon_ground_check.py`: a 12 / 7 deg tilted raised plane -> z = 0 to 1e-6, camera height 12 m after
+  it keeps the floor level, both survive a rebuild, reset returns the engine world exactly.
+- **End to end** with the new code: a fresh solve of DJI 0148 (1700 frames 4K, 44 min): camera and
+  telemetry read at ingest, 0.547 px median (95.1 % within 3 px), "41.18 m per solve unit from the
+  drone's GPS: 284 fixes over 143 m, +-1.0 %", level from the gimbal, GPS residual 0.14 m. It picked
+  a 2785 px lens (the older solve 2654 px; candidates 3.6 % apart): with this camera motion the lens
+  is uncertain by about +-4 % until the camera is calibrated (camera height change 19.2 m against
+  the barometer's 17.6 m, the older solve 17.75 m). Test solves kept in `$NIKO_HOME/runs/v05_tests`.
+- Nihad's DJI solves re-levelled with GPS / altitude size and gimbal up, After Effects re-exported
+  (`scripts/dev/backfill_scale.py` now does both and records the camera); lens checks recomputed
+  (`scripts/dev/backfill_checks.py`).
+- Checks: `pytest -m "not smoke"` 92 passed (new: test_telemetry 6, test_camera 4; the lens-check
+  test cameras now pan 10 deg); smoke 1 passed in 203 s; Blender: background check on DJI 0148 / 0036
+  OK, size check OK, ground check OK, update check OK, GUI screenshot of the 0.5.0 panel checked.
+
 ## 2026-10-02 (late) — 0.4.0: optional masks, real size, better scene mesh, correct ground
 
 Nihad (on 0.3.9, clip DJI 0079): keep his 0.3.9 changes, credit "Nihad Jihad" without "Niko",

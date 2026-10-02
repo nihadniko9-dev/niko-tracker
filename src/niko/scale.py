@@ -155,3 +155,89 @@ def estimate_metric_scale(trk: CameraTrack, xy: np.ndarray, vis: np.ndarray, sol
     agree = round(float(100 * (max(vals) / min(vals) - 1)), 1) if len(vals) > 1 else None
     return {"metres_per_unit": s, "agree_pct": agree, "reliable": agree is not None and agree <= AGREE_MAX_PCT,
             "models": found}
+
+
+# real size from the drone's own telemetry (niko.telemetry). Measured 2026-10-02 on Nihad's Air 3S
+# clips: GPS against the solved camera path, 0079: 133 m path, 0.36 m median residual, the two
+# halves of the flight 1.1 % apart; 0148: 143 m, 0.26 m, 0.8 % apart, and its barometric altitude
+# (17.6 m descent) 1.8 % from the GPS scale. The depth models were 2.4x and 1.7x off on the same clips.
+GPS_MIN_EXTENT_M = 20.0        # consumer GPS is good to well under a metre over a short flight
+GPS_MAX_RESIDUAL_FRAC = 0.03   # median residual / path extent
+HALVES_MAX_PCT = 5.0           # the two halves of the flight must give the same scale
+ALT_MIN_CHANGE_M = 5.0         # barometric altitude is reported in 0.1 m steps
+MAX_UNCERTAINTY_PCT = 15.0     # used for the scene only up to this (still far better than the depth models)
+MIN_UNCERTAINTY_PCT = 1.0
+
+
+def _halves_pct(a: float, b: float) -> float:
+    return 100.0 * abs(a - b) / (0.5 * (a + b))
+
+
+def telemetry_scale(trk: CameraTrack, tel: dict) -> dict | None:
+    """Metres per solve unit from the drone's GPS track (all three axes) or, without GPS, from its
+    altitude changes, with an uncertainty and whether it is reliable; None without usable telemetry."""
+    from .sim3 import umeyama
+    from .telemetry import align_rotation, enu, gimbal_rotations, updates
+
+    if trk.extra.get("rotation_only"):  # a tripod solve has no camera path to measure
+        return None
+    n = min(trk.n_frames, tel.get("n", 0))
+    out = {}
+    if tel.get("lat") is not None and tel.get("alt") is not None:
+        u = updates(tel["lat"][:n])
+        u = u[trk.valid[u] & np.isfinite(tel["alt"][u])]
+        if len(u) >= 10:
+            E = enu(tel["lat"][u], tel["lon"][u], tel["alt"][u])
+            C = trk.centers[u]
+            extent = float(np.linalg.norm(np.ptp(E, 0)))
+            if extent > 1.0:
+                sim = umeyama(C, E, with_scale=True)
+                r = np.linalg.norm(sim.apply(C) - E, axis=1)
+                h = len(u) // 2
+                s1 = umeyama(C[:h], E[:h], with_scale=True).s if h >= 5 else np.nan
+                s2 = umeyama(C[h:], E[h:], with_scale=True).s if len(u) - h >= 5 else np.nan
+                halves = _halves_pct(s1, s2) if np.isfinite(s1) and np.isfinite(s2) else None
+                res = float(np.median(r))
+                unc = max(MIN_UNCERTAINTY_PCT, (halves or 0.0) / 2, 200.0 * res / extent)
+                out["gps"] = {"metres_per_unit": float(sim.s), "fixes": int(len(u)), "extent_m": round(extent, 2),
+                              "residual_median_m": round(res, 3), "halves_apart_pct": None if halves is None else round(halves, 2),
+                              "uncertainty_pct": round(unc, 2),
+                              "reliable": bool(extent >= GPS_MIN_EXTENT_M and res <= GPS_MAX_RESIDUAL_FRAC * extent
+                                               and halves is not None and halves <= HALVES_MAX_PCT
+                                               and unc <= MAX_UNCERTAINTY_PCT)}
+    if tel.get("rel_alt") is not None:
+        ua = updates(tel["rel_alt"][:n])
+        ua = ua[trk.valid[ua]]
+        hgt = tel["rel_alt"][ua]
+        change = float(np.ptp(hgt)) if len(ua) else 0.0
+        up = None
+        Rg = gimbal_rotations(tel)
+        if Rg is not None:
+            al = align_rotation(trk, Rg)
+            if al is not None and al[1] < 2.0:
+                up = al[0].T @ np.array([0.0, 0.0, 1.0])  # true up in the solve's world
+        if up is not None and len(ua) >= 10 and change > 0.5:
+            z = trk.centers[ua] @ up
+            k, c = np.polyfit(z, hgt, 1)
+            res = float(np.median(np.abs(k * z + c - hgt)))
+            h = len(ua) // 2
+            halves = None
+            if np.ptp(hgt[:h]) > 0.3 * change and np.ptp(hgt[h:]) > 0.3 * change:
+                halves = _halves_pct(np.polyfit(z[:h], hgt[:h], 1)[0], np.polyfit(z[h:], hgt[h:], 1)[0])
+            unc = max(MIN_UNCERTAINTY_PCT, 100.0 * 0.1 / change, 200.0 * res / change, (halves or 0.0) / 2)
+            out["altitude"] = {"metres_per_unit": float(k), "readings": int(len(ua)), "change_m": round(change, 2),
+                               "residual_median_m": round(res, 3),
+                               "halves_apart_pct": None if halves is None else round(halves, 2),
+                               "uncertainty_pct": round(unc, 2),
+                               "reliable": bool(k > 0 and change >= ALT_MIN_CHANGE_M and res <= 0.05 * change
+                                                and unc <= MAX_UNCERTAINTY_PCT)}
+    if not out:
+        return None
+    pick = "gps" if out.get("gps", {}).get("reliable") else "altitude" if out.get("altitude", {}).get("reliable") else None
+    best = out[pick] if pick else (out.get("gps") or out.get("altitude"))
+    result = {"metres_per_unit": best["metres_per_unit"], "source": pick or ("gps" if "gps" in out else "altitude"),
+              "uncertainty_pct": best["uncertainty_pct"], "reliable": pick is not None, **out}
+    if "gps" in out and "altitude" in out and out["altitude"]["metres_per_unit"] > 0:
+        result["gps_vs_altitude_pct"] = round(_halves_pct(out["gps"]["metres_per_unit"],
+                                                          out["altitude"]["metres_per_unit"]), 2)
+    return result

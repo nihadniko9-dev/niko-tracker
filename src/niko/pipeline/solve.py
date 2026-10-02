@@ -44,6 +44,11 @@ KNOWN_LENS_MODES = {"ba_lens": ("fixed", "none", 1), "ba_lens_k1k2": ("fixed", "
 # with the solve by more than this (|log ratio|), the tracks did not constrain the focal:
 # synthetic_v1 dolly_forward 2.41 (focal 86 % off), every other shot <= 0.66 (zoom shots included)
 LENS_WARNING_LOG_RATIO = 1.0
+# a camera that turns less than this only translates, and pure translation does not measure the lens
+# (a longer lens and a deeper scene project the same): synthetic shots turning >= 1.09 deg (handheld
+# shake is enough) have focal errors <= 1.5 %; dolly_forward (0.03 deg) 86 %; real DJI 0079 (0.18 deg,
+# a gimbal holds the camera still) fits the footage, the gimbal and the GPS equally at 2662 and 2979 px
+MIN_TURN_DEG = 1.0
 # candidates whose held-out reprojection is within LENS_SPREAD_REPROJ of the best fit the footage
 # equally well; when their lenses differ by more than LENS_SPREAD_WARN the footage did not measure
 # the lens (scripts/dev/lens_spread.py, 2026-09-29). Synthetic shots whose pick is not a tripod
@@ -277,7 +282,7 @@ def lens_check(cands: dict, best: str, scores: dict | None = None) -> dict | Non
     """Flag a solve whose lens the footage did not measure: the learned depth models disagree with
     its focal by more than a factor e^LENS_WARNING_LOG_RATIO (pure forward motion), or candidates
     that fit the footage equally well disagree on the lens by more than LENS_SPREAD_WARN (long lens,
-    little parallax)."""
+    little parallax), or the camera turns less than MIN_TURN_DEG (it only translates)."""
     trk = cands[best]
     f = float(np.median(trk.K[trk.valid, 0, 0]))
     out, reasons = {"selected_focal_px": round(f, 1)}, []
@@ -293,7 +298,15 @@ def lens_check(cands: dict, best: str, scores: dict | None = None) -> dict | Non
         out["spread"] = sp
         if sp["spread_pct"] > 100 * LENS_SPREAD_WARN:
             reasons.append("equally_good_fits")
-    if not learned and not sp:
+    v = np.nonzero(trk.valid)[0]
+    if len(v) >= 2:
+        R0 = trk.R_c2w[v[0]]
+        turn = max(float(np.degrees(np.arccos(np.clip((np.trace(R0.T @ trk.R_c2w[i]) - 1) / 2, -1, 1)))) for i in v)
+        out["max_turn_deg"] = round(turn, 3)
+        tripod = trk.extra.get("rotation_only") or bool((scores or {}).get(best, {}).get("rotation_only"))
+        if turn < MIN_TURN_DEG and not tripod:
+            reasons.append("hardly_turns")
+    if not learned and not sp and "hardly_turns" not in reasons:
         return None
     return {"uncertain": bool(reasons), "reasons": reasons, **out}
 
@@ -427,8 +440,19 @@ def solve(clip: str | Path, out_dir: str | Path, methods=DEFAULT_METHODS, prompt
     if refine:
         focal_px = focal_mm / sensor_mm * shot["width"] if focal_mm else None
         if focal_px:
-            report["known_lens"] = {"focal_mm": focal_mm, "sensor_mm": sensor_mm, "focal_px": focal_px}
+            report["known_lens"] = {"focal_mm": focal_mm, "sensor_mm": sensor_mm, "focal_px": focal_px,
+                                    "source": "given"}
             log(f"[refine] known lens {focal_mm:g} mm on a {sensor_mm:g} mm sensor = {focal_px:.1f} px")
+        else:
+            from ..camera import profile_for
+            prof = profile_for(shot.get("camera"))
+            if prof and prof.get("width") == shot["width"]:
+                focal_px = float(prof["focal_px"])
+                report["known_lens"] = {"focal_px": focal_px, "source": "camera profile",
+                                        "camera": shot["camera"]["name"], "uncertainty_pct": prof["uncertainty_pct"],
+                                        "calibrated": prof.get("how")}
+                log(f"[refine] known lens from the {shot['camera']['name']} profile: {focal_px:.1f} px "
+                    f"(+-{prof['uncertainty_pct']} %, {prof.get('how')})")
         added = stage("refine", lambda: refine_stage(cands, tracks, out_dir, log, sift, sift_holdout, reuse=reuse,
                                                      focal_px=focal_px))
         if added:
@@ -450,6 +474,7 @@ def solve(clip: str | Path, out_dir: str | Path, methods=DEFAULT_METHODS, prompt
             log(f"[select] {name:<20} score {s['score_px']:.3f} px (reproj {s.get('reproj_median_px', float('nan')):.3f}, "
                 f"jitter {s.get('jitter_px', float('nan')):.3f}, frames {100 * s['success_rate']:.0f}%)")
     report["selected"] = best
+    report["camera"] = shot.get("camera")
     if best and not report.get("known_lens"):
         lc = lens_check(cands, best, sel["scores"])
         if lc:
@@ -461,6 +486,9 @@ def solve(clip: str | Path, out_dir: str | Path, methods=DEFAULT_METHODS, prompt
                 if "equally_good_fits" in lc["reasons"]:
                     lo, hi = lc["spread"]["focal_px"]
                     why.append(f"solves that fit the footage as well range {lo:.0f}-{hi:.0f} px")
+                if "hardly_turns" in lc["reasons"]:
+                    why.append(f"the camera turns only {lc['max_turn_deg']:.2f} deg, and a camera that only moves "
+                               "does not measure its lens (calibrate the camera once: niko calibrate)")
                 log(f"[solve] lens uncertain: solved focal {lc['selected_focal_px']} px, {'; '.join(why)}; this "
                     "camera motion does not measure the lens: give the focal length (--focal-mm) if you know it")
     if best:
@@ -478,14 +506,26 @@ def solve(clip: str | Path, out_dir: str | Path, methods=DEFAULT_METHODS, prompt
             report["metric_scale"] = metric
             agree = metric.get("agree_pct")
             apart = f"the two depth models {agree:.0f} % apart" if agree is not None else "one depth model only"
-            if metric.get("reliable"):
+            if metric.get("source") in ("gps", "altitude"):
+                t = metric["telemetry"][metric["source"]]
+                what = (f"GPS: {t['fixes']} fixes over {t['extent_m']:.0f} m" if metric["source"] == "gps"
+                        else f"altitude: {t['change_m']:.1f} m of climb or descent")
+                log(f"[scale] {metric['metres_per_unit']:.4g} m per solve unit from the drone's {what}, "
+                    f"+-{metric['uncertainty_pct']:.1f} %: the Blender scene is in metres")
+            elif metric.get("reliable"):
                 log(f"[scale] about {metric['metres_per_unit']:.4g} m per solve unit ({apart}): the Blender scene is "
                     "in metres, approximately; set the exact size in Blender from a known distance")
             else:
                 log(f"[scale] real size unknown ({apart}): set it in Blender from a known distance or the camera height")
         use = metric if metric and metric.get("reliable") else None
+        from ..telemetry import for_solve, true_up
+        up = true_up(trk, for_solve(out_dir))
+        if up is not None:
+            report["true_up"] = {"source": "gimbal", "up": [float(x) for x in up]}
+            log("[export] level from the drone's gimbal (true gravity)")
         stage("export", lambda: export_solve(trk, out_dir / "candidates" / best / "points.ply", out_dir / "selected",
-                                             out_dir / "frames", f"000000.{shot['frame_format']}", metric=use))
+                                             out_dir / "frames", f"000000.{shot['frame_format']}", metric=use,
+                                             up=up))
         from ..export_ae import export_after_effects
         stage("export_ae", lambda: export_after_effects(out_dir, log=log))
         fe = stage("frame_errors", lambda: frame_errors(trk, tracks, sift_holdout))
@@ -527,12 +567,24 @@ def solve(clip: str | Path, out_dir: str | Path, methods=DEFAULT_METHODS, prompt
 
 
 def _metric_scale(trk: CameraTrack, out_dir: Path, tracks: dict) -> dict | None:
-    """Approximate metres per solve unit (niko.scale), from the SIFT tracks when there are any."""
-    from ..scale import estimate_metric_scale
+    """Metres per solve unit: from the drone's own telemetry (GPS, else altitude) when it has some
+    and it is reliable, else approximately from the two depth models (niko.scale)."""
+    from ..scale import estimate_metric_scale, telemetry_scale
+    from ..telemetry import for_solve
 
     sift = out_dir / "sift" / "sift_tracks.npz"
     src = dict(np.load(sift)) if sift.exists() else tracks
-    return estimate_metric_scale(trk, src["xy"], src["vis"], out_dir)
+    depth = estimate_metric_scale(trk, src["xy"], src["vis"], out_dir)
+    if depth:
+        depth["source"] = "depth_models"
+    tel = for_solve(out_dir)
+    ts = telemetry_scale(trk, tel) if tel else None
+    if ts and ts["reliable"]:
+        return {"metres_per_unit": ts["metres_per_unit"], "reliable": True, "source": ts["source"],
+                "uncertainty_pct": ts["uncertainty_pct"], "telemetry": ts, "depth_models": depth}
+    if ts:
+        return {**(depth or {"reliable": False}), "telemetry": ts}
+    return depth
 
 
 def _finish(report: dict, out_dir: Path, t0: float) -> dict:

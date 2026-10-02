@@ -17,6 +17,7 @@ PROXY_HEIGHT = 1080
 
 # Container / stream tags that sometimes carry lens information (phones, DJI, cinema cameras).
 _FOCAL_KEYS = re.compile(r"focal|lens", re.IGNORECASE)
+_CAMERA_KEYS = re.compile(r"make|model|manufacturer|lens|encoder", re.IGNORECASE)
 
 
 def probe_video(path: Path) -> dict:
@@ -46,6 +47,7 @@ def probe_video(path: Path) -> dict:
         "pix_fmt": v.get("pix_fmt"),
         "rotation": rotation,
         "lens_tags": lens_tags,
+        "camera_tags": {k: val for k, val in tags.items() if _CAMERA_KEYS.search(k)},
     }
 
 
@@ -97,7 +99,8 @@ def ingest(
             raise ValueError(f"{clip}: no images")
         first = cv2.imread(str(files[0]), cv2.IMREAD_COLOR)
         meta = {"width": first.shape[1], "height": first.shape[0], "fps": float(fps or 25.0),
-                "fps_fraction": None, "codec": "images", "pix_fmt": None, "rotation": 0, "lens_tags": {}}
+                "fps_fraction": None, "codec": "images", "pix_fmt": None, "rotation": 0, "lens_tags": {},
+                "camera_tags": {}}
         source_frames = (cv2.cvtColor(cv2.imread(str(p), cv2.IMREAD_COLOR), cv2.COLOR_BGR2RGB) for p in files)
     else:
         meta = probe_video(clip)
@@ -106,6 +109,15 @@ def ingest(
         if meta["rotation"]:
             raise NotImplementedError(f"{clip}: rotated video ({meta['rotation']} deg) not handled yet")
         source_frames = _decode_frames(clip, meta["width"], meta["height"])
+    tel = None
+    if not clip.is_dir():
+        from ..telemetry import TELEMETRY_FILE, read_dji, save
+        try:
+            tel = read_dji(clip)
+        except Exception:  # telemetry is a bonus: a stream that cannot be read must not stop the solve
+            tel = None
+        if tel is not None:
+            save(shot_dir / TELEMETRY_FILE, tel)
 
     W, H = meta["width"], meta["height"]
     scale = min(1.0, proxy_height / H)
@@ -130,6 +142,12 @@ def ingest(
         "lens": {"focal_mm": None, "focal_35mm": None, "sensor_width_mm": None,
                  "tags": meta["lens_tags"], "source": "tags" if meta["lens_tags"] else "none"},
         "codec": meta["codec"], "pix_fmt": meta["pix_fmt"], "rotation": meta["rotation"],
+        "telemetry": None,
     }
+    if tel is not None:
+        from ..telemetry import summary
+        shot["telemetry"] = summary(tel)
+    from ..camera import identify
+    shot["camera"] = identify(meta.get("camera_tags", {}), shot["telemetry"], W, H)
     (shot_dir / "shot.json").write_text(json.dumps(shot, indent=1), encoding="utf-8")
     return shot
