@@ -71,6 +71,9 @@ def run_backend(name: str, task: str, shot_dir: str | Path, out_dir: str | Path,
            "out_dir": str(out_dir.resolve()), "options": options or {}}
     job_path = out_dir / "job.json"
     job_path.write_text(json.dumps(job, indent=1), encoding="utf-8")
+    result_path = out_dir / "result.json"
+    # A crashed process must never inherit a previous run's success.
+    result_path.unlink(missing_ok=True)
     py = env_python(name)
     if not py.exists():
         raise BackendError(f"backend env missing: {py}")
@@ -81,7 +84,8 @@ def run_backend(name: str, task: str, shot_dir: str | Path, out_dir: str | Path,
     with (out_dir / "log.txt").open("w", encoding="utf-8") as log, GpuMemorySampler() as gpu:
         proc = subprocess.run([str(py), "-m", f"niko_{name}", str(job_path)], stdout=log,
                               stderr=subprocess.STDOUT, timeout=timeout, cwd=out_dir, env=env)
-    result_path = out_dir / "result.json"
+    if proc.returncode != 0:
+        raise BackendError(f"{name}/{task} exited with code {proc.returncode}; see {out_dir / 'log.txt'}")
     if not result_path.exists():
         raise BackendError(f"{name}/{task} wrote no result.json (rc={proc.returncode}); see {out_dir / 'log.txt'}")
     result = json.loads(result_path.read_text(encoding="utf-8"))

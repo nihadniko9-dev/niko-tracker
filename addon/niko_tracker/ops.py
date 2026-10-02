@@ -383,7 +383,11 @@ class NIKO_OT_solve(bpy.types.Operator):
         n.solve_dir = engine.to_windows(out, engine.resolve_distro(p.distro))
         self._out = out
         self._distro = engine.resolve_distro(p.distro)
-        self._job = engine.EngineJob(engine.resolve_distro(p.distro), args)
+        try:
+            self._job = engine.EngineJob(engine.resolve_distro(p.distro), args)
+        except OSError as exc:
+            n.running = False
+            return self._refuse(n, f"Could not start the engine: {exc}. Check WSL and the engine installation.")
         self._timer = context.window_manager.event_timer_add(0.5, window=context.window)
         context.window_manager.modal_handler_add(self)
         return {"RUNNING_MODAL"}
@@ -457,8 +461,9 @@ class NIKO_OT_solve(bpy.types.Operator):
             return {"CANCELLED"}
         rc = self._job.returncode
         s = solve_io.get(n.solve_dir, refresh=True)
-        if s is None:
+        if s is None or s.report.get("status") == "failed":
             n.status = f"Failed: {n.error}" if n.error else f"The engine stopped (code {rc}); see the log"
+            n.error = n.error or "The solve did not finish. Open Show engine log for details."
             for st in n.stages:
                 if st.state == "RUN":
                     st.state = "FAIL"
@@ -466,10 +471,11 @@ class NIKO_OT_solve(bpy.types.Operator):
             return {"CANCELLED"}
         for st in n.stages:
             st.state = "DONE"
+        n.error = ""
         build_scene(context, s)
         setup_workspace(context)
         avg = s.average_px
-        n.status = f"Solved: average error {avg:.2f} px" if avg is not None else "Solved"
+        n.status = "Camera ready - check the result warnings" if s.guidance() else "Camera ready - play the shot and check for sliding"
         _redraw(context)
         return {"FINISHED"}
 
@@ -765,15 +771,9 @@ def _version_of(init_py: str):
 
 
 def _install_zip(zf, here: str) -> None:
-    """Write the add-on's .py files from an open release zip over this add-on's files."""
-    import shutil
-
-    names = [n for n in zf.namelist() if n.startswith("niko_tracker/") and n.endswith(".py")]
-    if not names:
-        raise ValueError("no add-on files in the zip")
-    for n in names:
-        with zf.open(n) as src, open(os.path.join(here, os.path.basename(n)), "wb") as dst:
-            shutil.copyfileobj(src, dst)
+    """Validate the complete archive and keep the previous installed version."""
+    from .updates import install_files, zip_files
+    install_files(zip_files(zf), here)
 
 
 def _download(url: str) -> bytes:
@@ -793,6 +793,7 @@ def _update_engine_code(distro: str, info: dict, base: str) -> str:
     can run it; returns a note for the status line. A development engine, whose code is the project
     folder itself, has no ENGINE_VERSION and is left alone."""
     import tempfile
+    import uuid
 
     code = info.get("engine_code")
     have = engine.query(distro, 'cat "$NIKO_REPO/ENGINE_VERSION" 2>/dev/null')
@@ -808,14 +809,23 @@ def _update_engine_code(distro: str, info: dict, base: str) -> str:
     with open(tmp, "wb") as fh:
         fh.write(_download(f"{base}/{code}"))
     ver = str(info["version"])
+    stamp = uuid.uuid4().hex
     out = engine.query(distro, (
-        'set -e; E="$NIKO_REPO"; '
+        f'set -e; E="$NIKO_REPO"; N="$E.new-{stamp}"; B="$E.previous-{stamp}"; '
         '[ -f "$NIKO_HOME/IMAGE_VERSION" ] || cp "$E/ENGINE_VERSION" "$NIKO_HOME/IMAGE_VERSION"; '
-        f'rm -rf "$E.new"; mkdir -p "$E.new"; tar -xzf {engine._q(engine.to_wsl(tmp))} -C "$E.new"; '
-        f'echo {ver} > "$E.new/ENGINE_VERSION"; '
-        'rm -rf "$E.old"; mv "$E" "$E.old"; mv "$E.new" "$E"; rm -rf "$E.old"; echo NIKO_OK'), timeout=300)
+        f'mkdir -p "$N"; tar -xzf {engine._q(engine.to_wsl(tmp))} -C "$N"; '
+        'test -f "$N/docs/schemas/cameras.schema.json"; '
+        'test -f "$N/src/niko/__init__.py"; test -f "$N/src/niko/cli.py"; '
+        'test -f "$N/src/niko/pipeline/__init__.py"; '
+        'test -f "$N/src/niko/pipeline/solve.py"; '
+        'PYTHONPATH="$N/src" "$NIKO_HOME/envs/niko/bin/python" -B -c '
+        + engine._q('import niko.cli, niko.pipeline.solve') + '; '
+        f'printf "%s\\n" {engine._q(ver)} > "$N/ENGINE_VERSION"; '
+        'mv "$E" "$B"; if ! mv "$N" "$E"; then mv "$B" "$E"; exit 1; fi; echo NIKO_OK'), timeout=300)
     os.remove(tmp)
-    return f"; engine code {have} -> {ver}" if out.endswith("NIKO_OK") else "; the engine code update failed"
+    if not out.endswith("NIKO_OK"):
+        raise RuntimeError("Engine update failed validation or installation; check the previous version before retrying")
+    return f"; engine code {have} -> {ver} (previous version kept)"
 
 
 class NIKO_OT_update(bpy.types.Operator):
@@ -847,8 +857,9 @@ class NIKO_OT_update(bpy.types.Operator):
                 if os.path.normcase(os.path.abspath(src)) == os.path.normcase(here):
                     self.report({"INFO"}, "Blender runs the add-on straight from the project folder: always current")
                     return {"FINISHED"}
-                for f in [f for f in os.listdir(src) if f.endswith(".py")]:
-                    shutil.copyfile(os.path.join(src, f), os.path.join(here, f))
+                from pathlib import Path
+                from .updates import install_files
+                install_files({f.name: f.read_bytes() for f in Path(src).glob("*.py")}, here)
             elif root and os.path.isfile(latest):  # a release folder (scripts/publish_release.py)
                 with open(latest, encoding="utf-8") as fh:
                     info = json.load(fh)

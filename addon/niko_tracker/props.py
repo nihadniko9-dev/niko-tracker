@@ -80,6 +80,8 @@ class NikoSceneProps(bpy.types.PropertyGroup):
     log: CollectionProperty(type=NikoLogLine)
     candidates_done: IntProperty(default=0)
     show_log: BoolProperty(name="Show engine log", default=False)
+    advanced: BoolProperty(name="Advanced settings", default=False,
+                           description="Set a known lens or customize objects excluded from tracking")
     show_points: BoolProperty(name="Show points", default=True)
     show_hud: BoolProperty(name="Show error on camera view", default=True)
     show_graph: BoolProperty(name="Show error graph on timeline", default=True)

@@ -2,6 +2,47 @@
 
 Newest first. Every claim here was run on this machine; the command and the numbers are listed.
 
+## 2026-10-02 — local 0.3.9 preview: guided workflow and safer results
+
+- User approved implementation after the read-only review. Local changes only; no GitHub release
+  or push. Installed add-on 0.3.9 in Blender 5.2, with the original 0.3.8 preserved under
+  `%APPDATA%/Blender Foundation/Blender/5.2/scripts/niko_tracker_backups/`.
+  The user's open, unsaved Blender session was left running; restart after saving to load the update.
+- Guided UI: Choose your video -> Solve camera -> Check your result; advanced lens and mask controls,
+  actionable result warnings, inlier fraction and an explicit inlier-average label. The camera HUD
+  also says Needs review for an uncertain lens instead of calling the solve Excellent. Mesh is
+  labelled optional. Sorani walkthrough: `docs/QUICKSTART.ku.md`.
+- Backend execution removes stale result.json and rejects nonzero exit codes. Successful camera
+  export can complete with warnings when an alternative candidate fails; essential export/selection
+  failures remain failures. A known-lens solve cannot silently fall back to an unconstrained raw result.
+- Conservative reuse: source content hashes, options, hardware profile and engine Python code must
+  match a completed run's reuse.json. Legacy solves remain loadable but cannot be reused without a
+  new solve. Existing solve folders are protected; benchmark --force archives under `.previous/`.
+- Add-on updates validate all Python sources before a directory swap, preserve a backup outside the
+  add-on discovery directory, and restore it on a failed swap. Engine code updates check staged imports
+  before swapping and retain the previous engine. The update shell was exercised against disposable
+  valid and deliberately broken releases, not the user's installed engine.
+- Validation: 67 non-Blender tests passed initially; 6 Blender tests passed (73 total excluding smoke).
+  Final non-smoke run: 76 passed in 21.08 s, including the new relative-source regression and two
+  staged engine-update checks. Full GPU smoke:
+  1 passed in 229.45 s. Reliability suite after final backup change: 11 passed. Commands used:
+  `python -B -m pytest -q -p no:cacheprovider -m 'not smoke'` and separate `-m smoke`, in the WSL
+  niko environment, with isolated basetemp directories. Blender add-on update check passed in a
+  scratch installation; installed 0.3.9 enable check passed. Existing clip 03 projection check:
+  780 projections, max 0.000517 px difference between Blender and engine.
+- Real test: a 2-second, 30 fps, 1280x720 copy from clip 03 (`reports/phase1/clip03-preview.mp4`).
+  Fresh solve in `$NIKO_HOME/solves/phase1_clip03_preview`: 60/60 frames, selected megasam+ba_k1k2,
+  0.19834 px inlier mean, 0.13106 px median, 99.8827% inliers; 488.6 s. Both COLMAP alternatives
+  failed; result correctly says completed_with_warnings. Lens remains uncertain (21% spread).
+  This short sample verifies the workflow, not ground-truth accuracy or improved performance.
+  Lock test: 1500 held-out SIFT tracks, 93.1% green / 5.1% amber / 1.8% red; no ground patches.
+  Loading this new result in Blender exposed relative CLI source paths; new solves now record
+  absolute paths, and legacy solves use shot.json's canonical source. After the fix: 720 projections,
+  maximum Blender/engine difference 0.000413 px. Source and installed add-on files match.
+  `reports/phase1/lock-test.mp4` and `preview.png` are local review artifacts. ZIP: `dist/niko_tracker-0.3.9.zip`.
+- Still outside this first milestone: faster inference, hard-shot accuracy improvements, lower-VRAM
+  hardware validation, and the separate installer hardware/disk checks identified in the review.
+
 ## 2026-10-02 (night) — own folder, cleanup
 
 Nihad: everything for work and updates in its own folder; the extra files removed.

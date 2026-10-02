@@ -50,9 +50,13 @@ def draw_hud():
     avg = s.average_px
     k = solve_io.hd_scale(s.blender.get("width"))
     label, _, rgba = solve_io.rating(avg, s.blender.get("width"))
+    if s.guidance():
+        label, rgba = "Needs review", (1.0, 0.65, 0.2, 1.0)
+    else:
+        label = "Check for sliding"
     w, _ = _text(x, y, 30 * ui, f"{avg:.2f} px" if avg is not None else "-", rgba)
     hd = f" ({avg / k:.2f} px HD)" if avg is not None and k > 1 else ""  # 4K: the rating uses HD pixels
-    _text(x + w + 12 * ui, y + 4 * ui, 13 * ui, f"average error{hd}  |  {label}", (0.92, 0.92, 0.92, 1.0))
+    _text(x + w + 12 * ui, y + 4 * ui, 13 * ui, f"inlier average{hd}  |  {label}", (0.92, 0.92, 0.92, 1.0))
     f = ctx.scene.frame_current
     e = s.frame_error(f)
     # frames without a held-out measurement (between keyframes) are solved, just not scored

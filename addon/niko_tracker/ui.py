@@ -28,26 +28,45 @@ class NIKO_PT_main(_Base, bpy.types.Panel):
             row.operator("niko.workspace", text="", icon="WORKSPACE")
         row.operator("niko.update", text="", icon="FILE_REFRESH")
         n = context.scene.niko
-        if n.status:
+        help_box = lay.box()
+        if n.running:
+            help_box.label(text="Tracking your camera...", icon="SORTTIME")
+            help_box.label(text="You can keep working while this runs.")
+        elif solve_io.get(n.solve_dir) is not None:
+            help_box.label(text="Next: check your result", icon="INFO")
+            help_box.label(text="Play the shot and look for sliding.")
+        elif n.clip:
+            help_box.label(text="Next: click Solve camera", icon="PLAY")
+            help_box.label(text="Automatic settings are ready.")
+        else:
+            help_box.label(text="Start here: choose your video below", icon="FILE_FOLDER")
+            help_box.label(text="For your first try, use a short shot.")
+        if n.status and (not n.running or n.show_log):
             box = lay.box()
             box.scale_y = 0.8
             box.label(text=n.status)
 
 
 class NIKO_PT_clip(_Base, bpy.types.Panel):
-    bl_label = "1  Clip"
+    bl_label = "1  Choose your video"
     bl_parent_id = "NIKO_PT_main"
 
     def draw(self, context):
         n = context.scene.niko
         col = self.layout.column()
         col.prop(n, "clip", text="")
+        col.label(text="One continuous shot, without cuts.")
         col.operator("niko.load", text="Load a finished solve", icon="FILE_FOLDER")
 
 
 class NIKO_PT_ignore(_Base, bpy.types.Panel):
-    bl_label = "2  Ignore moving things"
-    bl_parent_id = "NIKO_PT_main"
+    bl_label = "Objects to ignore"
+    bl_parent_id = "NIKO_PT_solve"
+    bl_options = {"DEFAULT_CLOSED"}
+
+    @classmethod
+    def poll(cls, context):
+        return context.scene.niko.advanced
 
     def draw(self, context):
         n = context.scene.niko
@@ -59,18 +78,25 @@ class NIKO_PT_ignore(_Base, bpy.types.Panel):
 
 
 class NIKO_PT_solve(_Base, bpy.types.Panel):
-    bl_label = "3  Solve"
+    bl_label = "2  Solve camera"
     bl_parent_id = "NIKO_PT_main"
 
     def draw(self, context):
         n = context.scene.niko
         lay = self.layout
-        row = lay.row(align=True)
-        row.prop(n, "lens_mode", expand=True)
-        if n.lens_mode == "KNOWN":
-            col = lay.column(align=True)
-            col.prop(n, "focal_mm")
-            col.prop(n, "sensor", text="")
+        settings = lay.column()
+        settings.enabled = not n.running
+        settings.prop(n, "advanced")
+        if n.advanced:
+            row = settings.row(align=True)
+            row.prop(n, "lens_mode", expand=True)
+            if n.lens_mode == "KNOWN":
+                col = settings.column(align=True)
+                col.prop(n, "focal_mm")
+                col.prop(n, "sensor", text="")
+        else:
+            settings.label(text="Lens: automatic" if n.lens_mode == "AUTO" else f"Known lens: {n.focal_mm:g} mm")
+            settings.label(text="Object masks: enabled")
         if n.running:
             row = lay.row()
             row.scale_y = 1.6
@@ -78,7 +104,7 @@ class NIKO_PT_solve(_Base, bpy.types.Panel):
         else:
             row = lay.row()
             row.scale_y = 1.8
-            row.operator("niko.solve", icon="PLAY")
+            row.operator("niko.solve", text="Solve camera", icon="PLAY")
         if n.error and not n.running:
             box = lay.box()
             box.alert = True
@@ -111,7 +137,7 @@ class NIKO_PT_solve(_Base, bpy.types.Panel):
 
 
 class NIKO_PT_result(_Base, bpy.types.Panel):
-    bl_label = "4  Result"
+    bl_label = "3  Check your result"
     bl_parent_id = "NIKO_PT_main"
 
     @classmethod
@@ -122,18 +148,28 @@ class NIKO_PT_result(_Base, bpy.types.Panel):
         s = solve_io.get(context.scene.niko.solve_dir)
         lay = self.layout
         avg = s.average_px
-        label, icon, _ = solve_io.rating(avg, s.blender.get("width"))
+        advice = s.guidance()
+        label, icon = ("Needs review", "ERROR") if advice else ("Ready for visual check", "INFO")
         box = lay.box()
         row = box.row()
         row.scale_y = 1.6
-        row.alert = avg is not None and avg >= 1.0
+        row.alert = bool(advice)
         k = solve_io.hd_scale(s.blender.get("width"))
         hd = f"  ({avg / k:.2f} HD)" if avg is not None and k > 1 else ""
-        row.label(text=f"{avg:.2f} px{hd}   {label}" if avg is not None else label, icon=icon)
-        box.label(text="Average error on unseen tracks")
+        row.label(text=label, icon=icon)
+        box.label(text=f"Inlier average: {avg:.2f} px{hd}" if avg is not None else "Error not measured")
+        box.label(text="Average includes errors below 3 px.")
+        fraction = (s.report.get("solve_error") or {}).get("inlier_fraction")
+        if fraction is not None:
+            box.label(text=f"Observations within 3 px: {100 * fraction:.1f}%")
+        for message in advice:
+            for chunk in _wrap(message, 42):
+                lay.label(text=chunk)
+        lay.operator("niko.locktest", text="Make a lock-test video", icon="SEQUENCE")
+        lay.label(text="Watch for points sliding on the footage.")
         lc = s.report.get("lens_check") or {}
         kl = s.report.get("known_lens")
-        if lc.get("uncertain"):
+        if lc.get("uncertain") and context.scene.niko.advanced:
             warn = lay.box()
             warn.alert = True
             warn.label(text="Lens uncertain", icon="ERROR")
@@ -145,7 +181,7 @@ class NIKO_PT_result(_Base, bpy.types.Panel):
                 w, sw = s.blender["width"], s.blender["sensor_width"]
                 lo, hi = (v / w * sw for v in sp["focal_px"])
                 col.label(text=f"Equally good fits: {lo:.0f} - {hi:.0f} mm")
-            col.label(text="Know the lens? Use 3 Solve > Known.")
+            col.label(text="Use 2 Solve > Advanced > Known.")
         elif kl:
             lay.label(text=f"Known lens: {kl['focal_mm']:g} mm ({kl['sensor_mm']:g} mm sensor)", icon="LOCKED")
         gaps = s.report.get("track_gaps") or []
@@ -169,13 +205,14 @@ class NIKO_PT_result(_Base, bpy.types.Panel):
         if lo is not None:
             _pair(col, "Lens", f"{lo:.1f} mm" if abs(hi - lo) < 0.05 else f"{lo:.1f} - {hi:.1f} mm")
             learned = (s.report.get("lens_check") or {}).get("learned_focal_px") or {}
-            if learned:  # what the depth models read from the images, for judging a lens by eye
+            if learned and context.scene.niko.advanced:
                 w, sw = s.blender["width"], s.blender["sensor_width"]
                 mm = sorted(v / w * sw for v in learned.values())
                 _pair(col, "  depth models say", f"{mm[0]:.0f} mm" if mm[-1] - mm[0] < 0.5 else
                       f"{mm[0]:.0f} - {mm[-1]:.0f} mm")
         _pair(col, "Camera", s.camera_kind)
-        _pair(col, "Picked", s.selected)
+        if context.scene.niko.advanced:
+            _pair(col, "Picked", s.selected)
         f, v = s.worst_frame()
         if f is not None:
             r = col.row()
@@ -184,6 +221,14 @@ class NIKO_PT_result(_Base, bpy.types.Panel):
         e = s.frame_error(context.scene.frame_current)
         if e is not None:
             _pair(col, "This frame", f"{e:.2f} px")
+        failed = [(k, v) for k, v in s.report.get("stages", {}).items() if not v.get("ok")]
+        if failed and context.scene.niko.advanced:
+            details = lay.box()
+            details.label(text="Processing details", icon="INFO")
+            for name, value in failed:
+                details.label(text=name)
+                for chunk in _wrap(value.get("error", "Failed")[:180], 42):
+                    details.label(text=chunk)
         lay.separator()
         row = lay.row(align=True)
         row.prop(context.scene.niko, "show_hud", text="", icon="FONT_DATA")
@@ -214,7 +259,7 @@ def _pair(col, a, b):
 
 
 class NIKO_PT_use(_Base, bpy.types.Panel):
-    bl_label = "5  Use it"
+    bl_label = "Use your camera"
     bl_parent_id = "NIKO_PT_main"
 
     @classmethod
@@ -224,6 +269,7 @@ class NIKO_PT_use(_Base, bpy.types.Panel):
     def draw(self, context):
         lay = self.layout
         box = lay.box()
+        box.label(text="Place your 3D object", icon="INFO")
         box.label(text="Anchor something to the footage", icon="EMPTY_AXIS")
         ob = context.active_object
         editing = ob is not None and ob.name == "Niko points" and ob.mode == "EDIT"
@@ -239,6 +285,7 @@ class NIKO_PT_use(_Base, bpy.types.Panel):
         col.scale_y = 1.3
         col.operator("niko.rebuild", icon="OUTLINER_OB_CAMERA")
         col.operator("niko.mesh", icon="MESH_ICOSPHERE")
+        col.label(text="Scene mesh is optional.")
         mesh = bpy.data.objects.get("Niko scene mesh")
         if mesh is not None:
             projected = mesh.modifiers.get("Niko projection") is not None
@@ -251,7 +298,7 @@ class NIKO_PT_use(_Base, bpy.types.Panel):
         col.operator("niko.open_folder", icon="FILE_FOLDER")
 
 
-_classes = (NIKO_PT_main, NIKO_PT_clip, NIKO_PT_ignore, NIKO_PT_solve, NIKO_PT_result, NIKO_PT_use)
+_classes = (NIKO_PT_main, NIKO_PT_clip, NIKO_PT_solve, NIKO_PT_ignore, NIKO_PT_result, NIKO_PT_use)
 
 
 def register():

@@ -54,12 +54,22 @@ measure its lens; the solve then says "lens uncertain" and this option fixes it.
 
 ## Blender add-on
 
+First-time users: [Sorani Kurdish walkthrough](docs/QUICKSTART.ku.md).
+The 0.3.9 interface guides you through choosing a video, solving the camera and checking the result.
+Advanced settings reveal lens controls and mask customization. Low pixel error is not a guarantee:
+review lens/tracking warnings and check for sliding before placing your final 3D objects.
+
+CLI reuse is conservative: only a completed solve with matching source contents, settings and
+engine code can be reused. Older solves remain loadable; use a new output folder to solve them
+again. Existing output folders are preserved. `bench run --force` keeps previous outputs under
+the run's `.previous/` directory.
+
 `addon/niko_tracker` (Blender 5.2; installed in `%APPDATA%\Blender Foundation\Blender\5.2\scripts\addons`).
-Open the **Niko track** tab: 1 Clip, 2 Ignore, 3 Solve, 4 Result, 5 Use it. The engine runs in
+Open the **Niko track** tab: 1 Choose your video, 2 Solve camera, 3 Check your result. The engine runs in
 WSL2 in the background; the result is built in the scene (camera, footage, points on a levelled
 ground) with the average error and an error-per-frame strip on the camera view.
 Load a finished solve: the engine's folder or a flat copy of it (e.g. `reports/test_shots/01`).
-5 Use it: pick points and put empties on them, build the scene mesh, lock-test video, After
+Use your camera: pick points and put empties on them, build the optional scene mesh, lock-test video, After
 Effects. The refresh button in the panel header installs the newest add-on: from this folder when
 the computer has it, from a release folder (`scripts/publish_release.py <folder>`), or else from
 the GitHub releases (`scripts/publish_release.py --github`).

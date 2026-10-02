@@ -81,8 +81,12 @@ def _solve(args) -> int:
     out = Path(args.out) if args.out else clip.with_suffix("").parent / f"{clip.stem}_niko"
     methods = args.methods.split(",") if args.methods else DEFAULT_METHODS
     prompts = args.prompts.split(",") if args.prompts else None
-    report = solve(clip, out, methods=methods, prompts=prompts, fps=args.fps, frame_start=args.frame_start,
-                   reuse=args.reuse, focal_mm=args.focal_mm, sensor_mm=args.sensor_mm, stride=args.stride)
+    try:
+        report = solve(clip, out, methods=methods, prompts=prompts, fps=args.fps, frame_start=args.frame_start,
+                       reuse=args.reuse, focal_mm=args.focal_mm, sensor_mm=args.sensor_mm, stride=args.stride)
+    except (ValueError, OSError) as exc:
+        print(f"Cannot start solve: {exc}", file=sys.stderr)
+        return 1
     print(f"{'OK' if report['ok'] else 'INCOMPLETE'}: selected {report.get('selected')} "
           f"in {report['total_seconds']}s -> {out / 'solve.json'}")
     return 0 if report["ok"] else 1

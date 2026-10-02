@@ -48,6 +48,8 @@ def _tick():
     win = ctx.window_manager.windows[0]
     with ctx.temp_override(window=win, area=win.screen.areas[0]):
         bpy.ops.screen.screenshot(filepath=png)
+    if len(args) > 3:
+        bpy.ops.wm.save_as_mainfile(filepath=os.path.normpath(args[3]), copy=True)
     print("NIKO_SCREENSHOT", png, os.path.exists(png))
     bpy.ops.wm.quit_blender()
     return None

@@ -39,6 +39,12 @@ def run_set(set_name: str, run_name: str, methods, only=None, force=False, promp
             meta["shots"][shot.name] = "skipped"
             continue
         t0 = time.time()
+        if force and not reuse and out.exists():
+            from uuid import uuid4
+            backup = out_root / ".previous" / f"{out.name}-{uuid4().hex[:8]}"
+            backup.parent.mkdir(exist_ok=True)
+            out.rename(backup)
+            log(f"[{shot.name}] previous output kept at {backup}")
         rep = solve(shot, out, methods=methods, prompts=prompts, reuse=reuse,
                     log=lambda s, n=shot.name: log(f"[{n}] {s}"))
         meta["shots"][shot.name] = {"ok": rep["ok"], "seconds": round(time.time() - t0, 1),

@@ -132,13 +132,14 @@ def load_sift(out_dir: Path, shot: dict, log) -> tuple[dict | None, dict | None]
     return None, None
 
 
-def _reuse_refined(folder: Path, key: str, options: dict) -> CameraTrack | None:
+def _reuse_refined(folder: Path, key: str, options: dict, focal_px=None) -> CameraTrack | None:
     """A refined candidate from an earlier run, if it was made with exactly these options."""
     path = folder / "cameras.json"
     if not path.exists():
         return None
     trk = CameraTrack.load(path)
-    ok = trk.extra.get(key, {}).get("options") == options and trk.extra.get("sift_split") == SIFT_SPLIT
+    ok = (trk.extra.get(key, {}).get("options") == options and trk.extra.get("sift_split") == SIFT_SPLIT
+          and trk.extra.get("known_focal_px") == focal_px)
     return trk if ok else None
 
 
@@ -174,7 +175,7 @@ def refine_stage(cands: dict, tracks: dict, out_dir: Path, log, sift: dict | Non
                 continue
             name = f"{n}+{suffix}"
             ropts = RefineOptions(intrinsics=intr, distortion=dist)
-            old = _reuse_refined(out_dir / "candidates" / name, "refine", asdict(ropts)) if reuse else None
+            old = _reuse_refined(out_dir / "candidates" / name, "refine", asdict(ropts), focal_px) if reuse else None
             if old is not None:
                 added[name] = old
                 log(f"[refine] {name}: reused")
@@ -303,8 +304,23 @@ def solve(clip: str | Path, out_dir: str | Path, methods=DEFAULT_METHODS, prompt
           stride: int | None = None) -> dict:
     """focal_mm: a known lens, with sensor_mm its sensor width (36 = full frame / 35 mm equivalent).
     stride: keyframe step for COLMAP / MegaSaM (None: candidates.keyframe_stride)."""
-    clip, out_dir = Path(clip), Path(out_dir)
+    clip, out_dir = Path(clip).resolve(), Path(out_dir).resolve()
+    from .cache import check_reuse, signature
+
+    spec = _bench_shot(clip)
+    src = clip / "frames" if spec else clip
+    hw = hardware_settings()
+    fingerprint = signature(src, {"methods": list(methods), "prompts": prompts, "fps": fps,
+                                  "frame_start": frame_start, "track_size": track_size, "refine": refine,
+                                  "focal_mm": focal_mm, "sensor_mm": sensor_mm, "stride": stride,
+                                  "hardware": hw, "spec": spec})
+    if reuse:
+        check_reuse(out_dir, fingerprint)
+    elif any((out_dir / p).exists() for p in ("shot.json", "solve.json", "candidates", "selected", "frames")):
+        raise ValueError("This output folder already contains a solve. Choose a new folder, or use --reuse "
+                         "with unchanged inputs. Existing results have been kept.")
     out_dir.mkdir(parents=True, exist_ok=True)
+    (out_dir / "reuse.json").unlink(missing_ok=True)
     report: dict = {"schema": "niko.solve/1", "clip": str(clip), "stages": {}, "refined": False}
     t_all = time.time()
 
@@ -320,9 +336,7 @@ def solve(clip: str | Path, out_dir: str | Path, methods=DEFAULT_METHODS, prompt
             log(f"[{name}] FAILED: {type(e).__name__}: {str(e)[:300]}")
             return None
 
-    spec = _bench_shot(clip)
     gt = CameraTrack.load(clip / "gt/cameras.json") if spec else None
-    src = clip / "frames" if spec else clip
 
     def reused(path: Path):
         """With reuse=True, an earlier stage's result.json that says ok is taken as is."""
@@ -342,7 +356,6 @@ def solve(clip: str | Path, out_dir: str | Path, methods=DEFAULT_METHODS, prompt
         return _finish(report, out_dir, t_all)
     log(f"[ingest] {shot['n_frames']} frames {shot['width']}x{shot['height']} @ {shot['fps']:g} fps")
 
-    hw = hardware_settings()
     opts = {"prompts": prompts} if prompts else {}
     if hw.get("sam3_chunk_frames"):
         opts["chunk_frames"] = int(hw["sam3_chunk_frames"])
@@ -421,6 +434,9 @@ def solve(clip: str | Path, out_dir: str | Path, methods=DEFAULT_METHODS, prompt
                     cands.pop(name)
             cands.update(added)
             report["refined"] = True
+        elif focal_px:
+            report["stages"]["refine"] = {"ok": False, "error": "No candidate could use the supplied lens."}
+            return _finish(report, out_dir, t_all)
     best, sel = stage("select", lambda: select(cands, tracks, sift_holdout)) or (None, None)
     report["select"] = sel
     if sel:
@@ -488,11 +504,20 @@ def solve(clip: str | Path, out_dir: str | Path, methods=DEFAULT_METHODS, prompt
             else:
                 log(f"[gt] {name:<20} ATE {r['ate_pct']:.3f}%  rot {r['rot_err_deg_max']:.3f} deg max  "
                     f"focal {r['focal_err_pct_max']:.2f}% max  {'TARGETS MET' if r['meets_targets'] else 'missed'}{flag}")
-    return _finish(report, out_dir, t_all)
+    result = _finish(report, out_dir, t_all)
+    if result["ok"]:
+        (out_dir / "reuse.json").write_text(json.dumps(fingerprint, indent=1), encoding="utf-8")
+    return result
 
 
 def _finish(report: dict, out_dir: Path, t0: float) -> dict:
     report["total_seconds"] = round(time.time() - t0, 1)
-    report["ok"] = all(s["ok"] for s in report["stages"].values()) and report.get("selected") is not None
+    # Candidate methods are alternatives. A failed alternative does not invalidate the selected export.
+    required = ("ingest", "select", "export", "frame_errors")
+    failed = {k: v.get("error", "Stage failed") for k, v in report["stages"].items() if not v["ok"]}
+    report["warnings"] = [{"stage": k, "message": v} for k, v in failed.items() if k not in required]
+    report["ok"] = (report.get("selected") is not None
+                    and all(report["stages"].get(k, {}).get("ok", False) for k in required))
+    report["status"] = ("completed_with_warnings" if report["warnings"] else "completed") if report["ok"] else "failed"
     (out_dir / "solve.json").write_text(json.dumps(report, indent=1, default=str), encoding="utf-8")
     return report

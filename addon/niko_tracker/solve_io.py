@@ -71,13 +71,44 @@ class Solve:
     def source_clip(self):
         """The clip the engine solved, as Windows sees it (solve.json 'clip': /mnt/d/... -> D:\\...)."""
         c = self.report.get("clip") or ""
+        if c and not os.path.isabs(c):
+            # Older CLI runs recorded a relative clip; ingest already saved its canonical source.
+            try:
+                with open(os.path.join(self.folder, "shot.json"), encoding="utf-8") as fh:
+                    c = json.load(fh).get("source") or c
+            except (OSError, ValueError):
+                pass
         if c.startswith("/mnt/") and len(c) > 6 and c[6] == "/":
             c = f"{c[5].upper()}:\\" + c[7:].replace("/", "\\")
-        return c if c and os.path.isfile(c) else None
+        return os.path.abspath(c) if c and os.path.isfile(c) else None
 
     @property
     def average_px(self):
         return (self.report.get("solve_error") or {}).get("average_px")
+
+    def guidance(self):
+        """Actionable checks, independent of a deceptively low average pixel error."""
+        messages = []
+        if (self.report.get("lens_check") or {}).get("uncertain"):
+            messages.append("Lens uncertain: enter a known lens in Advanced settings, or check object sliding carefully.")
+        if self.report.get("track_gaps"):
+            messages.append("Tracking broke: inspect both sides of each marked gap before using the camera.")
+        done, total = self.frames_solved
+        if done < total:
+            messages.append(f"Only {done} of {total} frames solved: check the missing parts.")
+        err = self.report.get("solve_error") or {}
+        fraction = err.get("inlier_fraction")
+        if fraction is not None and fraction < 0.9:
+            messages.append("Many tracked observations disagree: inspect the lock-test video.")
+        if self.average_px is None:
+            messages.append("No measured tracking error: inspect the result before using it.")
+        elif self.average_px / hd_scale(self.blender.get("width")) >= 1:
+            messages.append("Tracking error is high: inspect the worst frame and the lock-test video.")
+        failed = [k for k, v in self.report.get("stages", {}).items()
+                  if not v.get("ok") and not k.startswith("candidate:")]
+        if failed:
+            messages.append("A processing step failed. Enable Advanced settings to see the details.")
+        return messages
 
     @property
     def frames_solved(self):
