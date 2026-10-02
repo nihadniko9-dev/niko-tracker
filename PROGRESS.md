@@ -2,6 +2,52 @@
 
 Newest first. Every claim here was run on this machine; the command and the numbers are listed.
 
+## 2026-10-02 (evening) — all rights reserved; the engine image; installer installs everything
+
+Nihad: build the engine; on GitHub all rights must stay his, others may only install and update.
+
+- **Rights**: `LICENSE` = copyright Nihad Jihad (Niko), all rights reserved: installing and updating
+  the official releases is allowed for personal, non-commercial use; copying, changing,
+  redistributing or commercial use need his written permission; third-party parts keep their own
+  licenses (SAM License: redistribution with the license, which ships in sam3/; CoTracker3
+  CC-BY-NC 4.0: non-commercial with attribution; MegaSaM and Depth Anything 3: Apache-2.0 - read
+  from the license files in third_party). The installer shows LICENSE; README and the add-on say it.
+  GitHub: wiki, issues, projects, discussions off; main protected (no force push, no deletion);
+  interaction limit "collaborators only" until 2027-04-02 (GitHub's longest; renew then). On a
+  public repository GitHub still lets anyone view and fork; the license says a fork gives no right.
+- **Engine image** (`installer/engine/build_engine.ps1`: stage.sh -> import as a throw-away copy ->
+  prepare.sh -> export -> xz -T0 -> parts): the working distro is only read. Left out: Nihad's
+  solves (49 GB), runs (69 GB), benchmark data, checkpoints (13 GB, downloaded at install), the uv
+  cache (the envs keep their hard-linked files), CUDA toolkit 6.7 GB and Nsight 2.1 GB (build tools,
+  not redistributable; the compiled extensions link only against PyTorch: checked with ldd and
+  by running), secrets.sh, shell history, ssh, caches, logs. Checked in the staged tar (181 355
+  entries): no solves, runs, bench, checkpoints, secrets, history, ssh, CUDA, footage; 11 .mp4 =
+  the third-party repos' demo clips. prepare.sh repoints the envs' editable installs from the
+  Windows checkout to `$NIKO_HOME/engine` (committed tree of the version), writes env.sh
+  (UV_NO_SYNC, no CUDA_HOME), ENGINE_VERSION (code) and IMAGE_VERSION (environments).
+  0.3.7 image: 13.2 GB staged -> **4.25 GB tar.xz** (xz -6, all cores, 6 min) -> 3 parts of < 2 GB.
+- **Installer** (Inno Setup, per user): hardware check (also in silent installs), WSL2 check (turns
+  it on with an administrator prompt when missing), engine download (Inno's download page, SHA-256
+  per part), join, `wsl --import NikoEngine %LOCALAPPDATA%\NikoTracker\engine`, hardware.json into
+  the engine, models in a console window (`fetch_checkpoints.py --all --ask-token`: shows 13.2 GB,
+  resumable, asks for the Hugging Face token SAM 3 needs and keeps it in secrets.sh), add-on;
+  uninstall asks before removing the engine. Silent-safe questions (default: keep).
+  **Tested end to end** with the parts served from this PC (`python -m http.server`, installer
+  /ENGINEURL): 3 parts downloaded and checked, joined, imported: 196 s. In NikoEngine: user rudaw,
+  NIKO_REPO=$NIKO_HOME/engine, all five backends pass `niko doctor` on the RTX 5090 (CUDA kernels,
+  MegaSaM extensions, pycolmap CUDA); developer-only checks (nvcc, TORCH_CUDA_ARCH_LIST, Linux
+  Blender) are warnings inside an engine image. Smoke shot (30 frames) solved there:
+  colmap_global+ba 0.272 px, rot 0.147°, focal 1.21 %, targets met - the development engine on
+  the same frames: colmap_global+ba 0.272 px, rot 0.143°, focal 1.19 %.
+- **Updates of an installed engine**: the update button now also installs the release's engine code
+  (`niko-engine-code-<ver>.tar.gz`, ~1 MB) into NikoEngine when the image can run it
+  (`engine_image` in latest.json), else says the new setup is needed; refuses while a solve runs.
+  Tested with a local 0.3.8 release: add-on 0.3.7 -> 0.3.8 and engine code 0.3.7 -> 0.3.8,
+  IMAGE_VERSION kept 0.3.7, engine imports and runs afterwards.
+- Add-on 0.3.8 finds the engine distro by itself (NikoEngine, else Ubuntu-24.04).
+- `publish_release.py`: engine code tarball, `--engine` (upload the image parts) or
+  `--engine-image <ver>`. `pytest` 64 passed; Blender checks OK.
+
 ## 2026-10-02 (afternoon) — on GitHub, updates from GitHub releases, After Effects check passed
 
 - **After Effects round trip with undistorted footage (clip 03)**: AE was open with an empty,

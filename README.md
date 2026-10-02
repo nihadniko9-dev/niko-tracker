@@ -12,11 +12,13 @@ Third-party components keep their own licenses ([docs/LICENSES.md](docs/LICENSES
 ## Install (Windows)
 
 Download `NikoTracker-Setup-<version>.exe` from the
-[latest release](https://github.com/nihadniko9-dev/niko-tracker/releases/latest) and run it: it
-checks the computer (NVIDIA GPU, driver, memory, disk, WSL2) and installs the Blender add-on. The
-tracking engine itself (WSL2 + Python environments + models) is not in the installer yet: it is
-set up by hand (see docs/DESIGN.md). Updates: the round-arrow button in the add-on's Niko tab
-installs the newest release from here.
+[latest release](https://github.com/nihadniko9-dev/niko-tracker/releases/latest) and run it. It
+checks the computer (NVIDIA GPU, driver, memory, disk, WSL2), downloads the tracking engine
+(about 4 GB, checked piece by piece) and installs it into WSL2 as `NikoEngine`, downloads the
+models (about 13 GB, from their official sources; SAM 3 needs your own Hugging Face token and
+Meta's license accepted on huggingface.co/facebook/sam3.1) and installs the Blender add-on.
+Updates: the round-arrow button in the add-on's Niko tab installs the newest add-on and engine
+code from here; a new engine is only needed when its environments change (the button says so).
 
 - Brief: [docs/BRIEF.md](docs/BRIEF.md)
 - Design, environments, disk budget, later phases: [docs/DESIGN.md](docs/DESIGN.md)

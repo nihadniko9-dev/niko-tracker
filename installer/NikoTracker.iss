@@ -130,13 +130,37 @@ begin
   Result := RunCapture('wsl.exe', '--status', Raw) = 0;
 end;
 
+// numeric compare of dotted versions ("0.3.10" > "0.3.8"): <0, 0, >0
+function CompareVersions(A, B: String): Integer;
+var
+  PA, PB, NA, NB: Integer;
+begin
+  Result := 0;
+  while (Result = 0) and ((A <> '') or (B <> '')) do
+  begin
+    PA := Pos('.', A);
+    if PA = 0 then PA := Length(A) + 1;
+    PB := Pos('.', B);
+    if PB = 0 then PB := Length(B) + 1;
+    NA := StrToIntDef(Copy(A, 1, PA - 1), 0);
+    NB := StrToIntDef(Copy(B, 1, PB - 1), 0);
+    Delete(A, 1, PA);
+    Delete(B, 1, PB);
+    if NA < NB then Result := -1
+    else if NA > NB then Result := 1;
+  end;
+end;
+
 function InstalledEngineVersion: String;
 var
   Raw: AnsiString;
 begin
   Result := '';
   if not WslHasDistro(EngineDistro) then Exit;
-  if RunCapture('wsl.exe', '-d ' + EngineDistro + ' --exec cat ' + EngineHome + '/engine/ENGINE_VERSION', Raw) = 0 then
+  // the environments' version (the code inside may be newer: the add-on updates it alone)
+  if RunCapture('wsl.exe', '-d ' + EngineDistro + ' --exec cat ' + EngineHome + '/IMAGE_VERSION', Raw) = 0 then
+    Result := Trim(String(Raw))
+  else if RunCapture('wsl.exe', '-d ' + EngineDistro + ' --exec cat ' + EngineHome + '/engine/ENGINE_VERSION', Raw) = 0 then
     Result := Trim(String(Raw));
 end;
 
@@ -207,7 +231,7 @@ begin
       Exit;  // the add-on is still installed; the engine on the next run
     end;
     Have := InstalledEngineVersion;
-    if Have = EngineVersion then Exit;
+    if (Have <> '') and (CompareVersions(Have, EngineVersion) >= 0) then Exit;  // same or newer environments
     if Have <> '' then
       if SuppressibleMsgBox('Tracking engine ' + Have + ' is installed. Replacing it with ' + EngineVersion +
                 ' also removes the solves stored inside it (copy any you need first).' + #13#10#13#10 +

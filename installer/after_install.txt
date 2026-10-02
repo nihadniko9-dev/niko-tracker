@@ -1,14 +1,12 @@
-Niko Tracker - Nihad Jihad (Niko)
+Niko Tracker - Nihad Jihad (Niko). Copyright (c) 2026, all rights reserved.
 
 Installed:
+  - The tracking engine in WSL2 (distribution "NikoEngine"), with the models it downloaded.
   - The Blender add-on, in every Blender found on this computer and switched on.
     Open Blender: the "Niko track" workspace tab (or press N in the 3D view, tab "Niko").
 
-Not installed by this setup yet:
-  - The tracking engine. It runs inside WSL2 (Ubuntu) with an NVIDIA GPU. On this computer it
-    is set up by hand for now (see the read me in the Start menu); the add-on finds it through
-    its preferences (Edit > Preferences > Add-ons > Niko Tracker).
+If SAM 3 was skipped (no Hugging Face token), run "Download the models again" from the Start menu
+after accepting Meta's license at https://huggingface.co/facebook/sam3.1.
 
 Updates: press the round arrow at the top of the Niko tab, then restart Blender. It installs the
-newest release from github.com/nihadniko9-dev/niko-tracker (or from a release folder set in
-Edit > Preferences > Add-ons > Niko Tracker > "Niko Tracker folder").
+newest add-on and engine code from github.com/nihadniko9-dev/niko-tracker.
