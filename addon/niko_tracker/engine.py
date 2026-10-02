@@ -48,6 +48,31 @@ def engine_command(distro: str, niko_args: list[str]) -> list[str]:
     return ["wsl.exe", "-d", distro, "--exec", "bash", "-lc", inner]
 
 
+# the installer's engine first, then a hand-built one (the development machine's)
+ENGINE_DISTROS = ("NikoEngine", "Ubuntu-24.04")
+_RESOLVED = {}
+
+
+def installed_distros() -> list[str]:
+    r = subprocess.run(["wsl.exe", "--list", "--quiet"], capture_output=True, timeout=30,
+                       creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+    raw = r.stdout  # UTF-16 unless WSL_UTF8 is set
+    text = raw.decode("utf-16-le", "ignore") if b"\x00" in raw else raw.decode("utf-8", "ignore")
+    return [ln.strip() for ln in text.splitlines() if ln.strip()]
+
+
+def resolve_distro(preferred: str) -> str:
+    """The preferred distribution when it is installed, else the first engine distribution that is."""
+    if preferred not in _RESOLVED:
+        try:
+            names = installed_distros()
+        except (OSError, subprocess.SubprocessError):
+            names = []
+        _RESOLVED[preferred] = (preferred if preferred in names
+                                else next((d for d in ENGINE_DISTROS if d in names), preferred))
+    return _RESOLVED[preferred]
+
+
 def query(distro: str, shell: str, timeout: float = 60.0) -> str:
     r = subprocess.run(["wsl.exe", "-d", distro, "--exec", "bash", "-lc", shell], capture_output=True,
                        timeout=timeout, creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))

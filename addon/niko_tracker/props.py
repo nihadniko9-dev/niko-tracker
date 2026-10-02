@@ -13,7 +13,7 @@ UPDATE_URL = "https://github.com/nihadniko9-dev/niko-tracker/releases/latest/dow
 class NikoPreferences(bpy.types.AddonPreferences):
     bl_idname = __package__
 
-    distro: StringProperty(name="WSL distribution", default="Ubuntu-24.04",
+    distro: StringProperty(name="WSL distribution", default="NikoEngine",
                            description="The WSL2 distribution that holds the Niko Tracker Engine")
     solves_dir: StringProperty(name="Solves folder (inside WSL)", default="$NIKO_HOME/solves",
                                description="Where the engine writes its working files (Linux file system: fast)")

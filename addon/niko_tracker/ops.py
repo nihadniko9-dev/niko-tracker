@@ -362,7 +362,7 @@ class NIKO_OT_solve(bpy.types.Operator):
             return self._refuse(n, f"Not a video or an image: {os.path.basename(clip)}")
         p = prefs(context)
         try:
-            home, _ = niko_home_windows(p.distro)
+            home, _ = niko_home_windows(engine.resolve_distro(p.distro))
         except Exception as e:  # noqa: BLE001 - shown to the user as is
             return self._refuse(n, str(e))
         stem = re.sub(r"[^A-Za-z0-9_.-]+", "_", os.path.splitext(os.path.basename(src.rstrip("\\/")))[0])
@@ -380,10 +380,10 @@ class NIKO_OT_solve(bpy.types.Operator):
         n.started = time.time()
         n.stages[0].state, n.stages[0].started = "RUN", n.started
         n.status = "Starting the engine..."
-        n.solve_dir = engine.to_windows(out, p.distro)
+        n.solve_dir = engine.to_windows(out, engine.resolve_distro(p.distro))
         self._out = out
-        self._distro = p.distro
-        self._job = engine.EngineJob(p.distro, args)
+        self._distro = engine.resolve_distro(p.distro)
+        self._job = engine.EngineJob(engine.resolve_distro(p.distro), args)
         self._timer = context.window_manager.event_timer_add(0.5, window=context.window)
         context.window_manager.modal_handler_add(self)
         return {"RUNNING_MODAL"}
@@ -495,9 +495,9 @@ class NIKO_OT_load(bpy.types.Operator):
         # start in the engine's solves folder (inside WSL) when it can be found
         try:
             p = prefs(context)
-            home, home_win = niko_home_windows(p.distro)
+            home, home_win = niko_home_windows(engine.resolve_distro(p.distro))
             solves = p.solves_dir.replace("$NIKO_HOME", home)
-            win = engine.to_windows(solves, p.distro)
+            win = engine.to_windows(solves, engine.resolve_distro(p.distro))
             if os.path.isdir(win):
                 self.directory = win + os.sep
         except Exception:  # noqa: BLE001 - the browser just opens where Blender last was
@@ -597,7 +597,7 @@ class _EngineTask(bpy.types.Operator):
         p = prefs(context)
         n.running = True
         n.status = self.bl_label + "..."
-        self._job = engine.EngineJob(p.distro, self.args(engine.to_wsl(n.solve_dir)))
+        self._job = engine.EngineJob(engine.resolve_distro(p.distro), self.args(engine.to_wsl(n.solve_dir)))
         self._timer = context.window_manager.event_timer_add(0.5, window=context.window)
         context.window_manager.modal_handler_add(self)
         return {"RUNNING_MODAL"}

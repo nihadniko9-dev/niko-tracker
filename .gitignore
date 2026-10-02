@@ -24,3 +24,4 @@ installer/Output/
 *.MOV
 *.blend1
 .claude/
+installer/engine_parts.iss

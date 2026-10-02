@@ -28,5 +28,6 @@ for p in \
   "/tmp/*" /swapfile; do
   x+=("--exclude=.$p")
 done
-tar --one-file-system --numeric-owner --xattrs --acls --anchored -cpf "$OUT" "${x[@]}" .
+# exit 1 = "file changed as we read it" (/sys and friends while the distro runs): the archive is complete
+tar --one-file-system --numeric-owner --xattrs --acls --anchored --warning=no-file-changed   -cpf "$OUT" "${x[@]}" . || [ $? -eq 1 ]
 ls -la "$OUT"

@@ -47,7 +47,7 @@ CHECKPOINTS = [
     Checkpoint("sam3.1_multiplex", "sam3", "hf:facebook/sam3.1", ("sam3.1_multiplex.pt",),
                int(3.5 * GB), "SAM License", gated=True),
     Checkpoint("cotracker3_offline", "cotracker", "hf:facebook/cotracker3", ("scaled_offline.pth",),
-               None, "CC-BY-NC 4.0"),
+               101_890_938, "CC-BY-NC 4.0"),
     Checkpoint("da3_nested_giant_large_1.1", "da3", "hf:depth-anything/DA3NESTED-GIANT-LARGE-1.1",
                ("model.safetensors", "config.json"), int(6.76 * GB), "CC-BY-NC 4.0"),
     # MegaSaM priors (megasam_final.pth itself ships inside the mega-sam repo, 20.8 MB)
