@@ -4,6 +4,11 @@ Camera tracker research prototype and benchmark: solves the camera of a video sh
 on tracks it never saw, and hands the result to Blender and After Effects.
 Author: Nihad Jihad ("Niko"), Art Director and Motion Designer. Personal, non-commercial.
 
+**Copyright (c) 2026 Nihad Jihad ("Niko"). All rights reserved.** The code is visible so the
+releases can be downloaded; it may not be copied, modified or redistributed. You may install and
+update the official releases for personal, non-commercial use. See [LICENSE](LICENSE).
+Third-party components keep their own licenses ([docs/LICENSES.md](docs/LICENSES.md)).
+
 ## Install (Windows)
 
 Download `NikoTracker-Setup-<version>.exe` from the

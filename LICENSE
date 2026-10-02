@@ -1,0 +1,35 @@
+Niko Tracker
+Copyright (c) 2026 Nihad Jihad ("Niko"). All rights reserved.
+
+This repository is public so that the Niko Tracker installer, engine and updates can be
+downloaded. Being able to see the code gives no right to use it beyond what is written here.
+
+1. What you may do (personal, non-commercial use, free of charge)
+   - Download the official releases published at
+     https://github.com/nihadniko9-dev/niko-tracker/releases, install them and run them
+     unmodified on your own computer.
+   - Receive updates of those releases through the add-on's update button or this page.
+
+2. What you may not do without the author's prior written permission
+   - Copy, modify, adapt, translate or build upon the code, the Blender add-on, the
+     installer, the engine image or the documentation, in whole or in part.
+   - Distribute, publish, re-upload, sublicense, sell, rent or host them, modified or not.
+   - Use them, or any part of them, for commercial purposes.
+   - Remove or change this notice or the author attribution.
+
+   GitHub's Terms of Service let GitHub users view and fork public repositories on GitHub.
+   That gives no further right: a fork may not be used, changed or distributed.
+
+3. Third-party components
+   The engine uses and ships software by other authors (for example COLMAP, PyTorch, SAM 3,
+   CoTracker3, MegaSaM, Depth Anything 3). Each stays under its own license and its own
+   copyright; this license covers only the author's own work. See docs/LICENSES.md and the
+   license files shipped with each component. Model weights are not part of the releases:
+   the installer downloads them from their official sources under their own licenses.
+
+4. No warranty
+   THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED. IN NO
+   EVENT SHALL THE AUTHOR BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY ARISING FROM
+   THE SOFTWARE OR ITS USE.
+
+Permission requests: open a contact through https://github.com/nihadniko9-dev.

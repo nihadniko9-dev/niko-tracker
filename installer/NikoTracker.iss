@@ -50,6 +50,8 @@ WizardSmallImageFile=art\wizard_small_1x.bmp,art\wizard_small_2x.bmp
 SetupIconFile=art\niko.ico
 UninstallDisplayIcon={app}\niko.ico
 UninstallDisplayName={#AppName} {#AppVersion}
+LicenseFile=..\LICENSE
+AppCopyright=Copyright (c) 2026 Nihad Jihad (Niko). All rights reserved.
 InfoAfterFile=after_install.txt
 OutputDir=Output
 
@@ -64,6 +66,7 @@ Source: "..\addon\niko_tracker\*.py"; DestDir: "{app}\addon\niko_tracker"; Compo
 Source: "hardware_check.ps1"; DestDir: "{app}\installer"
 Source: "install_addon.ps1"; DestDir: "{app}\installer"
 Source: "..\README.md"; DestDir: "{app}"
+Source: "..\LICENSE"; DestDir: "{app}"; DestName: "LICENSE.txt"
 Source: "..\docs\LICENSES.md"; DestDir: "{app}\docs"
 Source: "art\niko.ico"; DestDir: "{app}"
 
