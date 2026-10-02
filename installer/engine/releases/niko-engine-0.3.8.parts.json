@@ -1,0 +1,23 @@
+{
+    "version":  "0.3.8",
+    "tar":  "niko-engine-0.3.8.tar.xz",
+    "sha256":  "29324f88184d78fee36a976859b2778145f7c69605294a9c0f42bdc955534710",
+    "size":  4250215260,
+    "parts":  [
+                  {
+                      "name":  "niko-engine-0.3.8.tar.xz.part00",
+                      "sha256":  "044eed1b3e1d94b2e06597a14d29ad0655e43903c05115c9beb303bb19d6193e",
+                      "size":  1992294400
+                  },
+                  {
+                      "name":  "niko-engine-0.3.8.tar.xz.part01",
+                      "sha256":  "574196250b4980fc0d78600ae351e5e0e9b489631ae631cc555807a814f3e96a",
+                      "size":  1992294400
+                  },
+                  {
+                      "name":  "niko-engine-0.3.8.tar.xz.part02",
+                      "sha256":  "157f536949375fea90623b3abd662205c451ebaf96f3a344f3bdd2c969d2a78b",
+                      "size":  265626460
+                  }
+              ]
+}

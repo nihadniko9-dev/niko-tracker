@@ -3,7 +3,7 @@
 # make it an engine that stands on its own. Author: Nihad Jihad ("Niko").
 # Run as root:  prepare.sh <engine-src.tar from git archive> <version>
 #   - the engine code is the committed tree of this version, at $NIKO_HOME/engine
-#   - the envs' editable installs pointed at the Windows checkout (/mnt/d/Pack/Track Nhad): repointed
+#   - the envs' editable installs pointed at the Windows checkout (/mnt/d/Niko Tracker): repointed
 #   - env.sh: NIKO_REPO = the engine copy, no CUDA toolkit, uv never re-syncs on its own
 #   - machine identity and leftovers cleared
 set -euo pipefail
@@ -12,7 +12,7 @@ VER="$2"
 H=/home/rudaw
 N=$H/niko
 E=$N/engine
-OLD="/mnt/d/Pack/Track Nhad"
+OLD="/mnt/d/Niko Tracker"
 
 rm -rf "$E"
 mkdir -p "$E"

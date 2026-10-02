@@ -44,7 +44,7 @@ def _bench_report(args) -> int:
     for s in r["summary"]:
         print(f"{s['method']:<20} solved {s['solved']}/{s['shots']}, targets met {s['targets_met']}/{s['shots']}, "
               f"median ATE {s['ate_pct']}, median rot max {s['rot_err_deg_max']}")
-    # a copy next to the source (D:\Pack\Track Nhad\reports\<run>) so it opens from Windows directly
+    # a copy next to the source (D:\Niko Tracker\reports\<run>) so it opens from Windows directly
     dst = REPO / "reports" / run_dir.name
     dst.mkdir(parents=True, exist_ok=True)
     for f in (r["html"], r["csv"]):

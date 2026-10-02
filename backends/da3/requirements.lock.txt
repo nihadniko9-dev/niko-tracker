@@ -68,8 +68,8 @@ natsort==8.4.0
 nbformat==5.11.1
 nest-asyncio==1.6.0
 networkx==3.6.1
--e file:///mnt/d/Pack/Track%20Nhad/backends/common
--e file:///mnt/d/Pack/Track%20Nhad/backends/da3
+-e file:///mnt/d/Niko%20Tracker/backends/common
+-e file:///mnt/d/Niko%20Tracker/backends/da3
 nodeenv==1.11.0
 numexpr==2.14.2
 numpy==1.26.4

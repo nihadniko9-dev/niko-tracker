@@ -19,7 +19,7 @@ class NikoPreferences(bpy.types.AddonPreferences):
                                description="Where the engine writes its working files (Linux file system: fast)")
     auto_workspace: BoolProperty(name="Add the 'Niko track' tab to every file", default=True,
                                  description="Create the Niko track workspace when a file is opened")
-    repo_dir: StringProperty(name="Niko Tracker folder", subtype="DIR_PATH", default="D:\\Pack\\Track Nhad",
+    repo_dir: StringProperty(name="Niko Tracker folder", subtype="DIR_PATH", default="D:\\Niko Tracker",
                              description="Where updates come from: the project folder, or a release folder "
                                          "(latest.json and the add-on zip, e.g. on a shared drive or USB stick)")
     update_url: StringProperty(name="Update address", default=UPDATE_URL,

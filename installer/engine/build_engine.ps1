@@ -73,4 +73,6 @@ $parts = Get-Content (Join-Path $Out "parts.sha256") | ForEach-Object {
 Remove-Item (Join-Path $Out "parts.sha256")
 [ordered]@{ version = $ver; tar = $base; sha256 = $hash; size = (Get-Item $xz).Length; parts = @($parts) } |
     ConvertTo-Json -Depth 4 | Set-Content -Encoding ascii (Join-Path $Out "niko-engine-$ver.parts.json")
+# installer\build.ps1 reads the parts list from the repo: commit it with the release
+Copy-Item (Join-Path $Out "niko-engine-$ver.parts.json") (Join-Path $PSScriptRoot "releases") -Force
 Step ("{0} parts: {1}" -f @($parts).Count, (($parts | ForEach-Object { $_.name }) -join ", "))

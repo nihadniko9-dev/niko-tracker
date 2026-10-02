@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # System packages for Niko Tracker inside WSL2 Ubuntu 24.04. Runs as root:
-#   wsl -d Ubuntu-24.04 -u root -- bash "/mnt/d/Pack/Track Nhad/scripts/wsl/00_system_root.sh"
+#   wsl -d Ubuntu-24.04 -u root -- bash "/mnt/d/Niko Tracker/scripts/wsl/00_system_root.sh"
 # Never installs a Linux NVIDIA driver: WSL uses the Windows driver (/usr/lib/wsl/lib).
 set -euo pipefail
 

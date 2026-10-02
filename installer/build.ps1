@@ -1,26 +1,32 @@
 # Build the Windows installer: installer\Output\NikoTracker-Setup-<version>.exe
 # Niko Tracker - author: Nihad Jihad ("Niko").
 # Needs Inno Setup 6 (ISCC.exe; per-user install in %LOCALAPPDATA%\Programs\Inno Setup 6).
-#   -EngineDir   where installer\engine\build_engine.ps1 left niko-engine-<version>.parts.json
-#   -EngineBase  where the installer downloads the parts from (default: this version's GitHub release)
+# The engine it downloads: the newest installer\engine\releases\niko-engine-<v>.parts.json with
+# v <= this version (build_engine.ps1 writes them; a code-only release keeps the last image).
+#   -EngineBase  where the installer downloads the parts from (default: that image's GitHub release)
 #   -NoEngine    an installer without the engine steps (add-on and hardware check only)
-param([string]$EngineDir = "D:\NikoEngine", [string]$EngineBase = "", [switch]$NoEngine)
+param([string]$EngineBase = "", [switch]$NoEngine)
 
 $ErrorActionPreference = "Stop"
 $here = Split-Path -Parent $MyInvocation.MyCommand.Path
 $iscc = @("$env:LOCALAPPDATA\Programs\Inno Setup 6\ISCC.exe", "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe") |
     Where-Object { Test-Path $_ } | Select-Object -First 1
 if (-not $iscc) { throw "Inno Setup 6 not found (ISCC.exe)" }
-# the version is the add-on's (bl_info "version": (0, 3, 7))
+# the version is the add-on's (bl_info "version")
 $init = Get-Content (Join-Path $here "..\addon\niko_tracker\__init__.py") -Raw
 if ($init -notmatch '"version":\s*\((\d+),\s*(\d+),\s*(\d+)\)') { throw "add-on version not found" }
 $version = "$($Matches[1]).$($Matches[2]).$($Matches[3])"
 
 # engine_parts.iss: the engine image this installer downloads (generated, not in git)
-$parts = Join-Path $EngineDir "niko-engine-$version.parts.json"
+function VersionKey([string]$v) { [version]$v }
+$parts = Get-ChildItem (Join-Path $here "engine\releases") -Filter "niko-engine-*.parts.json" -ErrorAction SilentlyContinue |
+    Where-Object { $_.Name -match '^niko-engine-(\d+\.\d+\.\d+)\.parts\.json$' } |
+    Where-Object { (VersionKey ($_.Name -replace '^niko-engine-|\.parts\.json$', '')) -le (VersionKey $version) } |
+    Sort-Object { VersionKey ($_.Name -replace '^niko-engine-|\.parts\.json$', '') } |
+    Select-Object -Last 1 -ExpandProperty FullName
 $inc = Join-Path $here "engine_parts.iss"
-if ($NoEngine -or -not (Test-Path $parts)) {
-    if (-not $NoEngine) { Write-Warning "no $parts : building an installer without the engine steps" }
+if ($NoEngine -or -not $parts) {
+    if (-not $NoEngine) { Write-Warning "no engine image <= $version in installer\engine\releases: building without the engine steps" }
     @"
 const
   EngineVersion = '';
@@ -39,7 +45,7 @@ end;
 "@ | Set-Content -Encoding ascii $inc
 } else {
     $p = Get-Content $parts -Raw | ConvertFrom-Json
-    if (-not $EngineBase) { $EngineBase = "https://github.com/nihadniko9-dev/niko-tracker/releases/download/v$version/" }
+    if (-not $EngineBase) { $EngineBase = "https://github.com/nihadniko9-dev/niko-tracker/releases/download/v$($p.version)/" }
     $adds = ($p.parts | ForEach-Object { "  Page.Add(Base + '$($_.name)', '$($_.name)', '$($_.sha256)');" }) -join "`r`n"
     $join = ($p.parts | ForEach-Object { "'`"' + T + '$($_.name)`"'" }) -join " + '+' + "
     $dels = ($p.parts | ForEach-Object { "  DeleteFile(T + '$($_.name)');" }) -join "`r`n"

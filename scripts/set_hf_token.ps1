@@ -10,7 +10,7 @@ if ($found.Count -eq 0) {
     exit 1
 }
 $token = $found[$found.Count - 1].Value
-$script = "/mnt/d/Pack/Track Nhad/scripts/wsl/set_hf_token.sh"
+$script = "/mnt/d/Niko Tracker/scripts/wsl/set_hf_token.sh"
 $token | wsl.exe -d Ubuntu-24.04 --exec bash $script
 if ($LASTEXITCODE -eq 0) {
     Set-Clipboard -Value " "

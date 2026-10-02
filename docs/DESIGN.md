@@ -9,16 +9,16 @@ Two roots, on purpose:
 
 | Root | Filesystem | Holds |
 |---|---|---|
-| `D:\Pack\Track Nhad` = `/mnt/d/Pack/Track Nhad` in WSL | NTFS (Windows) | **Source only**: code, docs, tests, small configs. Small, versioned, editable from Windows. |
+| `D:\Niko Tracker` = `/mnt/d/Niko Tracker` in WSL | NTFS (Windows) | **Source only**: code, docs, tests, small configs. Small, versioned, editable from Windows. |
 | `$NIKO_HOME` = `~/niko` inside WSL | ext4 (Linux) | **Everything heavy**: uv environments, cloned research repos, checkpoints, Blender, benchmark shots, run outputs. |
 
 Heavy I/O never touches `/mnt/c` or `/mnt/d` (9P is ~10x slower than ext4).
 uv environments are placed on ext4 with `UV_PROJECT_ENVIRONMENT`, never as `.venv` inside the repo.
 
-### Repo layout (`D:\Pack\Track Nhad`)
+### Repo layout (`D:\Niko Tracker`)
 
 ```
-Track Nhad/
+Niko Tracker/
 ├─ README.md                 quick start
 ├─ PROGRESS.md               what works, what failed, exact commands
 ├─ pyproject.toml            orchestrator package `niko` (Python 3.12, no torch)
