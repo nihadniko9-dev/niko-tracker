@@ -49,7 +49,10 @@ Nihad: build the engine; on GitHub all rights must stay his, others may only ins
   installed it from the local server (/ENGINEURL) in 187 s: code 0.3.8, image 0.3.8, `niko doctor`
   0 failures (with the models copied in), smoke shot colmap_incremental+ba 0.274 px, rot 0.139°,
   focal 1.15 %, targets met. Test engine, test install and server removed afterwards; this PC
-  keeps its development engine (Ubuntu-24.04). Not uploaded yet: 4.25 GB, waiting for Nihad.
+  keeps its development engine (Ubuntu-24.04). **Released** (Nihad: "upload now"):
+  https://github.com/nihadniko9-dev/niko-tracker/releases/tag/v0.3.8 - 7 files; GitHub's SHA-256
+  of the three parts equals the local ones (044eed1b..., 574196..., 157f53...); every download
+  address answers 200 with the right size; latest.json -> 0.3.8, engine_image 0.3.8.
 - Add-on 0.3.8 finds the engine distro by itself (NikoEngine, else Ubuntu-24.04).
 - `publish_release.py`: engine code tarball, `--engine` (upload the image parts) or
   `--engine-image <ver>`. `pytest` 64 passed; Blender checks OK.
