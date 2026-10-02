@@ -66,23 +66,55 @@ def _unwrap(e: np.ndarray) -> np.ndarray:
     return np.degrees(np.unwrap(np.radians(e), axis=0))
 
 
+# "up" from the cameras' level right axes needs some turning (rms ~1 deg or more) that clearly
+# outweighs the roll wobble, and an up no more than 75 deg from the cameras' own up
+LEVEL_MIN_TURN = 3e-4
+LEVEL_MIN_RATIO = 20.0
+LEVEL_MAX_DEG = 75.0
+
+
+def level_up(trk: CameraTrack) -> tuple[np.ndarray, bool]:
+    """(up, True) from the cameras' right axes, which stay level unless the camera rolls: up is the
+    normal of the plane they lie in, known once the camera turns a little (pan, orbit, drift).
+    Else (the cameras' mean up, False). On the synthetic benchmark (scripts/dev/ground_variants.py)
+    it is 0.0-0.5 deg from the true up on every shot that turns, where the ground plane's normal
+    was 3-48 deg off on four of them (low parallax, a drone pitched 55 deg down, a zoom)."""
+    v = np.nonzero(trk.valid)[0]
+    Rc = trk.R_c2w[v]
+    up0 = -Rc[:, :, 1].mean(0)
+    up0 /= np.linalg.norm(up0)
+    x = Rc[:, :, 0]
+    w, V = np.linalg.eigh(x.T @ x / len(x))  # ascending
+    n = V[:, 0] if V[:, 0] @ up0 >= 0 else -V[:, 0]
+    if w[1] > LEVEL_MIN_TURN and w[1] > LEVEL_MIN_RATIO * w[0] and n @ up0 > np.cos(np.radians(LEVEL_MAX_DEG)):
+        return n, True
+    return up0, False
+
+
 def world_alignment(trk: CameraTrack, X: np.ndarray | None, rng) -> tuple[np.ndarray, np.ndarray, str]:
     """(A, origin, how): rotation taking solve-world vectors to AE-world and the solve-world point
-    that becomes AE's origin. Up -> -Y, the first camera's heading -> +Z."""
+    that becomes AE's origin. Up -> -Y, the first camera's heading -> +Z.
+    Up comes from the cameras' level right axes when the camera turns (level_up), else from the
+    ground plane; the ground must lie below the cameras (2 % of the median depth), must not roll
+    the camera more than 8 deg and, when it decides "up", must hold 5 % of the points (real clip
+    02, people on a sofa at telephoto: the best plane ran through the camera)."""
     from .locktest import fit_ground
 
     v = np.nonzero(trk.valid)[0]
     Rc = trk.R_c2w[v]
-    up = -Rc[:, :, 1].mean(0)
-    up /= np.linalg.norm(up)
+    up, level = level_up(trk)
     origin, how = trk.centers[v].mean(0), "cameras"
     if X is not None and len(X) >= 50:
-        g = fit_ground(X, up, rng)
-        if g is not None:
+        C = trk.centers[v]
+        depth = float(np.median([np.median((X @ trk.R[t].T + trk.t[t])[:, 2]) for t in v[:: max(1, len(v) // 10)]]))
+        g = fit_ground(X, up, rng, min_cos=np.cos(np.radians(10.0)) if level else 0.7, cameras=C,
+                       min_height=0.02 * max(depth, 0.0), right=Rc[:, :, 0].mean(0), max_roll_deg=8.0)
+        if g is not None and (level or g[2].mean() >= 0.05):
             n, d, inl = g
-            up = n
             c = np.median(X[inl], 0)
             origin, how = c - (c @ n + d) * n, "ground plane"
+            if not level:
+                up = n
     fwd = Rc[0][:, 2] - (Rc[0][:, 2] @ up) * up  # first camera's view direction, flattened
     if np.linalg.norm(fwd) < 1e-6:
         fwd = Rc[0][:, 0] - (Rc[0][:, 0] @ up) * up
@@ -118,7 +150,7 @@ def _pick_points(trk: CameraTrack, X: np.ndarray, vis: np.ndarray | None, k: int
 
 
 JSX = r'''// Niko Tracker - After Effects import
-// Niko Tracker Engine - author: Nihad Jihad ("Niko"). Generated file.
+// Niko Tracker Engine - author: Nihad Jihad. Generated file.
 // Run in After Effects: File > Scripts > Run Script File... and pick this file.
 // __NOTE__
 (function () {

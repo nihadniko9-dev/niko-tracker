@@ -291,7 +291,7 @@ def write_html(run_dir: Path, rows, methods, shots, summary, path: Path) -> None
 <style>{CSS}</style></head><body><main>
 <h1>Niko Tracker — benchmark report</h1>
 <div class="muted">Run <b>{html.escape(run_dir.name)}</b> · set {html.escape(str(meta.get('set', '')))} ·
-generated {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M UTC')} · Niko Tracker Engine, author Nihad Jihad (Niko)</div>
+generated {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M UTC')} · Niko Tracker Engine, author Nihad Jihad</div>
 <p class="ink2">Targets on synthetic shots: rotation error &lt; 0.2°, focal error &lt; 2 %, ATE &lt; 1 % of scene size,
 every frame solved. ATE after Sim(3) alignment; rotation after the best global rotation; reprojection is the
 median over held-out CoTracker3 tracks triangulated with each method's own cameras (no ground truth).

@@ -1,5 +1,5 @@
 # Niko Tracker - build the engine image: a slim, self-contained WSL distro as one .tar.xz.
-# Author: Nihad Jihad ("Niko").
+# Author: Nihad Jihad.
 #   powershell -ExecutionPolicy Bypass -File installer\engine\build_engine.ps1 [-Source Ubuntu-24.04] [-Out D:\NikoEngine]
 # The working engine distro (-Source) is only read. Steps:
 #   1. git archive HEAD            -> engine code of this version (committed files only)

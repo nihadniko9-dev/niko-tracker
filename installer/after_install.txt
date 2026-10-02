@@ -1,4 +1,4 @@
-Niko Tracker - Nihad Jihad (Niko). Copyright (c) 2026, all rights reserved.
+Niko Tracker - Nihad Jihad. Copyright (c) 2026, all rights reserved.
 
 Installed:
   - The tracking engine in WSL2 (distribution "NikoEngine"), with the models it downloaded.

@@ -45,8 +45,14 @@ def run_set(set_name: str, run_name: str, methods, only=None, force=False, promp
             backup.parent.mkdir(exist_ok=True)
             out.rename(backup)
             log(f"[{shot.name}] previous output kept at {backup}")
-        rep = solve(shot, out, methods=methods, prompts=prompts, reuse=reuse,
-                    log=lambda s, n=shot.name: log(f"[{n}] {s}"))
+        try:
+            rep = solve(shot, out, methods=methods, prompts=prompts, reuse=reuse,
+                        log=lambda s, n=shot.name: log(f"[{n}] {s}"))
+        except ValueError as e:  # e.g. --reuse on a run made before reuse.json existed: one shot, not the run
+            log(f"[{shot.name}] not solved: {e}")
+            meta["shots"][shot.name] = {"ok": False, "error": str(e)}
+            meta_path.write_text(json.dumps(meta, indent=1), encoding="utf-8")
+            continue
         meta["shots"][shot.name] = {"ok": rep["ok"], "seconds": round(time.time() - t0, 1),
                                     "selected": rep.get("selected")}
         meta_path.write_text(json.dumps(meta, indent=1), encoding="utf-8")

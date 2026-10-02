@@ -100,7 +100,8 @@ def build_scene(context, s: solve_io.Solve):
 
     world = bpy.data.objects.new("Niko world", None)
     world.empty_display_type = "PLAIN_AXES"
-    world.matrix_world = Matrix(d.get("world") or Matrix.Identity(4))
+    k = float(solve_io.read_real_scale(s.folder).get("factor", 1.0))  # a size set in Blender
+    world.matrix_world = Matrix.Scale(k, 4) @ Matrix(d.get("world") or Matrix.Identity(4))
     coll.objects.link(world)
 
     cam_data = bpy.data.cameras.new("Niko camera")
@@ -128,8 +129,7 @@ def build_scene(context, s: solve_io.Solve):
         for prop in ("lens", "shift_x", "shift_y"):
             cam_data.keyframe_insert(prop, frame=f["frame"])
     scene.camera = cam
-    wscale = max(world.matrix_world.to_scale())
-    cam_data.display_size = 0.6 / max(wscale, 1e-9)  # ~0.6 units in the levelled scene
+    _fit_camera_to_scale(cam_data, world, d)
     cam_data.passepartout_alpha = 0.85
 
     if not context.scene.niko.clip and s.source_clip():  # a loaded solve brings its own footage
@@ -149,13 +149,25 @@ def build_scene(context, s: solve_io.Solve):
         pts.parent = world
         pts.matrix_parent_inverse = Matrix.Identity(4)
         scale = max(world.matrix_world.to_scale())
-        # ~2.5 px on screen at the median depth (10 units in the levelled scene) whatever the lens:
-        # a fixed size covered the footage with a telephoto lens (real clip 03 at 80 mm)
+        # ~2.5 px on screen at the median depth whatever the lens: a fixed size covered the footage
+        # with a telephoto lens (real clip 03 at 80 mm). Depth in solve units (blender.json from
+        # 0.4 on; before, the levelled scene put the median depth at 10 units)
         lens = [f["lens"] for f in d["frames"] if f["valid"]]
         f_px = (sorted(lens)[len(lens) // 2] / d["sensor_width"] * d["width"]) if lens else 1500.0
-        _points_modifier(pts, (2.5 * 10.0 / f_px) / max(scale, 1e-9))
+        depth = d.get("median_depth") or 10.0 / max(scale, 1e-9)
+        _points_modifier(pts, 2.5 * depth / f_px)
         pts.hide_render = True
     scene.frame_set(d["frame_start"])
+
+
+def _fit_camera_to_scale(cam_data, world, d):
+    """Camera drawing size and clipping for the scene's size (a drone scene in metres reaches
+    hundreds of metres; Blender's default clip end is 100)."""
+    wscale = max(world.matrix_world.to_scale())
+    depth = (d.get("median_depth") or 10.0 / max(wscale, 1e-9)) * wscale  # median depth, scene units
+    cam_data.display_size = max(0.05, 0.06 * depth)
+    cam_data.clip_start = max(1e-3, depth / 1000.0)
+    cam_data.clip_end = max(100.0, depth * 50.0)
 
 
 def _footage(context, cam_data, d):
@@ -370,8 +382,7 @@ class NIKO_OT_solve(bpy.types.Operator):
             f"/{stem}_{datetime.datetime.now():%Y%m%d_%H%M%S}"
         args = ["solve", engine.to_wsl(src), "-o", out]
         prompts = n.prompts()
-        if prompts:
-            args += ["--prompts", ",".join(prompts)]
+        args += ["--prompts", ",".join(prompts) if prompts else "none"]
         if n.lens_mode == "KNOWN":
             args += ["--focal-mm", f"{n.focal_mm:g}", "--sensor-mm", n.sensor]
         n.reset_stages()
@@ -553,6 +564,22 @@ class NIKO_OT_jump_worst(bpy.types.Operator):
         return {"FINISHED"}
 
 
+class NIKO_OT_masks_all(bpy.types.Operator):
+    bl_idname = "niko.masks_all"
+    bl_label = "Ignore all / none"
+    bl_description = "Turn every kind of moving thing on or off (the 'more' field is cleared with None)"
+
+    value: bpy.props.BoolProperty()
+
+    def execute(self, context):
+        n = context.scene.niko
+        for key in ("person", "car", "animal", "sky", "water"):
+            setattr(n, f"ignore_{key}", self.value)
+        if not self.value:
+            n.ignore_extra = ""
+        return {"FINISHED"}
+
+
 class NIKO_OT_goto_frame(bpy.types.Operator):
     bl_idname = "niko.goto_frame"
     bl_label = "Go to frame"
@@ -674,6 +701,86 @@ def selected_points(context):
     else:
         co = [v.co.copy() for v in ob.data.vertices if v.select]
     return ob, [ob.matrix_world @ c for c in co]
+
+
+class NIKO_OT_set_size(bpy.types.Operator):
+    bl_idname = "niko.set_size"
+    bl_label = "Set real size"
+    bl_description = ("Scale the camera, points and mesh to real size from one known measurement: the "
+                      "distance between two selected points, or the camera's height above the ground")
+    bl_options = {"REGISTER", "UNDO"}
+
+    mode: bpy.props.EnumProperty(items=[
+        ("POINTS", "Two points", "Distance between two selected points ('Niko points' in Edit Mode, or two "
+                                 "selected objects such as empties)"),
+        ("HEIGHT", "Camera height", "The camera's height above the ground at this frame (drone: the height in "
+                                    "its app; handheld: about 1.6 m)")])
+    metres: bpy.props.FloatProperty(name="Real value (m)", default=1.0, min=0.001, soft_max=1000.0,
+                                    unit="NONE", precision=3)
+
+    def _measure(self, context):
+        """(current length in scene units, words for the record) or (None, why not)."""
+        if self.mode == "HEIGHT":
+            cam = context.scene.camera
+            if cam is None:
+                return None, "No camera in the scene"
+            z = cam.matrix_world.translation.z
+            if z <= 1e-6:
+                return None, "The camera is not above the ground plane here: use two points instead"
+            return z, "camera height"
+        ob, pts = selected_points(context)
+        if len(pts) != 2:
+            sel = [o for o in context.selected_objects if o.type in {"EMPTY", "MESH"}] if ob is None or not pts else []
+            if len(sel) == 2:
+                pts = [o.matrix_world.translation.copy() for o in sel]
+        if len(pts) != 2:
+            return None, "Select exactly two points (Edit Mode on 'Niko points') or two objects"
+        d = (pts[0] - pts[1]).length
+        if d <= 1e-9:
+            return None, "The two points are in the same place"
+        return d, "two points"
+
+    def invoke(self, context, event):
+        length, _ = self._measure(context)
+        if length is not None:
+            self.metres = round(length, 3)
+        return context.window_manager.invoke_props_dialog(self)
+
+    def draw(self, context):
+        lay = self.layout
+        length, why = self._measure(context)
+        if length is None:
+            lay.label(text=why, icon="ERROR")
+            return
+        lay.label(text=f"Now: {length:.3f} units ({why})")
+        lay.prop(self, "metres")
+
+    def execute(self, context):
+        n = context.scene.niko
+        world = bpy.data.objects.get("Niko world")
+        s = solve_io.get(n.solve_dir)
+        length, why = self._measure(context)
+        if world is None or s is None:
+            self.report({"ERROR"}, "Load a solve first")
+            return {"CANCELLED"}
+        if length is None:
+            self.report({"ERROR"}, why)
+            return {"CANCELLED"}
+        k = self.metres / length
+        world.matrix_world = Matrix.Scale(k, 4) @ world.matrix_world
+        cam = bpy.data.objects.get("Niko camera")
+        if cam is not None:
+            _fit_camera_to_scale(cam.data, world, s.blender)
+        old = float(solve_io.read_real_scale(s.folder).get("factor", 1.0))
+        how = f"{why} = {self.metres:g} m"
+        try:
+            solve_io.write_real_scale(s.folder, old * k, how)
+        except OSError as e:
+            self.report({"WARNING"}, f"Scaled, but could not save it with the solve: {e}")
+        n.status = f"Real size set: {how} (x{k:.4g}). 1 Blender unit = 1 m"
+        self.report({"INFO"}, n.status)
+        _redraw(context)
+        return {"FINISHED"}
 
 
 class NIKO_OT_empties(bpy.types.Operator):
@@ -1049,7 +1156,7 @@ class NIKO_OT_mesh(_EngineTask):
     existing = "mesh.ply"
 
     def args(self, solve_wsl):
-        return ["mesh", solve_wsl]
+        return ["mesh", solve_wsl, "--quality", bpy.context.scene.niko.mesh_quality.lower()]
 
     def done(self, context):
         path = os.path.join(solve_io.selected_dir(context.scene.niko.solve_dir), "mesh.ply")
@@ -1057,7 +1164,51 @@ class NIKO_OT_mesh(_EngineTask):
             context.scene.niko.status = "No mesh was written; see the log"
             return
         ob = import_scene_mesh(context, path)
-        context.scene.niko.status = f"Scene mesh: {len(ob.data.vertices):,} vertices under Niko world"
+        context.scene.niko.status = (f"Scene mesh: {len(ob.data.vertices):,} vertices under Niko world"
+                                     + ("; a simulation copy is ready (Add simulation collider)"
+                                        if os.path.exists(os.path.join(os.path.dirname(path), "mesh_sim.ply"))
+                                        else ""))
+
+
+SIM_NAME = "Niko scene collider"
+
+
+class NIKO_OT_sim_mesh(bpy.types.Operator):
+    bl_idname = "niko.sim_mesh"
+    bl_label = "Add simulation collider"
+    bl_description = ("The simplified, hole-filled copy of the scene mesh, with a Collision modifier, for physics "
+                      "(cloth, particles, rigid bodies, fluids). Hidden in renders")
+    bl_options = {"REGISTER", "UNDO"}
+
+    @classmethod
+    def poll(cls, context):
+        s = solve_io.get(context.scene.niko.solve_dir)
+        return s is not None and os.path.exists(os.path.join(solve_io.selected_dir(s.folder), "mesh_sim.ply"))
+
+    def execute(self, context):
+        path = os.path.join(solve_io.selected_dir(context.scene.niko.solve_dir), "mesh_sim.ply")
+        old = bpy.data.objects.get(SIM_NAME)
+        if old is not None:
+            bpy.data.objects.remove(old, do_unlink=True)
+        before = set(bpy.data.objects)
+        bpy.ops.wm.ply_import(filepath=path)
+        new = [o for o in bpy.data.objects if o not in before]
+        if not new:
+            self.report({"ERROR"}, "The simulation mesh could not be read")
+            return {"CANCELLED"}
+        ob = new[0]
+        ob.name = SIM_NAME
+        world = bpy.data.objects.get("Niko world")
+        if world is not None:
+            ob.parent = world
+            ob.matrix_parent_inverse = Matrix.Identity(4)
+            ob.matrix_basis = Matrix.Identity(4)
+        ob.modifiers.new("Collision", "COLLISION")
+        ob.display_type = "WIRE"
+        ob.hide_render = True
+        context.scene.niko.status = f"Simulation collider: {len(ob.data.polygons):,} faces, Collision modifier on"
+        self.report({"INFO"}, context.scene.niko.status)
+        return {"FINISHED"}
 
 
 class NIKO_OT_open_folder(bpy.types.Operator):
@@ -1101,7 +1252,8 @@ def _ensure_tab():
 
 
 _classes = (NIKO_OT_workspace, NIKO_OT_solve, NIKO_OT_cancel, NIKO_OT_load, NIKO_OT_rebuild,
-            NIKO_OT_jump_worst, NIKO_OT_goto_frame, NIKO_OT_locktest, NIKO_OT_export_ae, NIKO_OT_open_folder, NIKO_OT_empties,
+            NIKO_OT_jump_worst, NIKO_OT_goto_frame, NIKO_OT_masks_all, NIKO_OT_set_size, NIKO_OT_sim_mesh,
+            NIKO_OT_locktest, NIKO_OT_export_ae, NIKO_OT_open_folder, NIKO_OT_empties,
             NIKO_OT_edit_points, NIKO_OT_update, NIKO_OT_mesh, NIKO_OT_project)
 
 

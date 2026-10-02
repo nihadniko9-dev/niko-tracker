@@ -1,7 +1,7 @@
 """Niko Tracker - camera tracking for Blender, driven by the Niko Tracker Engine (WSL2).
 
-Niko Tracker Engine - author: Nihad Jihad ("Niko").
-Copyright (c) 2026 Nihad Jihad ("Niko"). All rights reserved; see LICENSE.
+Niko Tracker Engine - author: Nihad Jihad.
+Copyright (c) 2026 Nihad Jihad. All rights reserved; see LICENSE.
 Adds a "Niko track" workspace and a "Niko" tab in the 3D view sidebar:
 1 choose video, 2 solve camera, 3 check result; advanced lens/mask controls and camera export.
 The engine runs in WSL2 (niko solve); Blender only reads its files and does no camera maths.
@@ -9,8 +9,8 @@ The engine runs in WSL2 (niko solve); Blender only reads its files and does no c
 
 bl_info = {
     "name": "Niko Tracker",
-    "author": "Nihad Jihad (Niko)",
-    "version": (0, 3, 9),
+    "author": "Nihad Jihad",
+    "version": (0, 4, 0),
     "blender": (5, 2, 0),
     "location": "Workspace tab 'Niko track' / 3D View > Sidebar > Niko",
     "description": "Automatic camera tracking with the Niko Tracker Engine",

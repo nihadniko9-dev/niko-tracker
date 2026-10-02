@@ -72,10 +72,12 @@ print(f"NIKO_CHECK projections {checked}, worst |blender - engine| = {worst:.6f}
 assert checked > 0 and worst < 0.01 * max(1.0, W / 1920), worst  # Blender float32; HD pixels
 
 icons = set(bpy.types.UILayout.bl_rna.functions["label"].parameters["icon"].enum_items.keys())
-used = {"CAMERA_DATA", "WORKSPACE", "FILE_FOLDER", "USER", "AUTO", "MONKEY", "LIGHT_SUN", "MOD_OCEAN", "ADD",
-        "CANCEL", "PLAY", "FRAME_NEXT", "FONT_DATA", "GRAPH", "OUTLINER_OB_CAMERA", "SEQUENCE", "EXPORT",
-        "QUESTION", "INFO", "ERROR", "CHECKMARK", "LOCKED", "MESH_ICOSPHERE", "EMPTY_AXIS", "PIVOT_MEDIAN",
-        "RESTRICT_SELECT_OFF", "FILE_REFRESH", "IMAGE_DATA", "COLOR"} | set(ui.STATE_ICON.values())
+import re  # noqa: E402
+src = "".join(open(os.path.join(REPO, "addon", "niko_tracker", f), encoding="utf-8").read()
+              for f in os.listdir(os.path.join(REPO, "addon", "niko_tracker")) if f.endswith(".py"))
+# every icon the add-on names: icon="..." and the (key, "ICON") pairs of the mask buttons
+used = (set(re.findall(r'icon="([A-Z0-9_]+)"', src)) | set(re.findall(r'\("[a-z]+", "([A-Z0-9_]+)"\)', src))
+        | set(ui.STATE_ICON.values()))
 missing = sorted(used - icons)
 print("NIKO_CHECK missing icons:", missing)
 assert not missing, missing

@@ -1,7 +1,7 @@
 PROJECT: Niko Tracker Engine — Phase 1: solver prototype + benchmark
 
 GOAL
-I'm Nihad Jihad ("Niko"), Art Director and Motion Designer. I want a camera tracker that beats MotionMaster 3D (a Blender add-on; its Heavy mode is COLMAP + GLOMAP + OpenMVS, with SAM2 masks) on hard shots — low parallax, motion blur, moving people/cars, handheld and drone footage — while staying close to it on easy shots.
+I'm Nihad Jihad, Art Director and Motion Designer. I want a camera tracker that beats MotionMaster 3D (a Blender add-on; its Heavy mode is COLMAP + GLOMAP + OpenMVS, with SAM2 masks) on hard shots — low parallax, motion blur, moving people/cars, handheld and drone footage — while staying close to it on easy shots.
 Personal, non-commercial research tool: never distributed or sold. Still record each model's license.
 Talk to me in Sorani Kurdish; keep code, comments and files in English.
 

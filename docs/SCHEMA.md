@@ -132,7 +132,12 @@ solve.json                    every stage, every candidate's score, selection, s
   "known_lens": {"focal_mm": 28, "sensor_mm": 36, "focal_px": 1493.3},  // only with --focal-mm
   // breaks in tracking: fewer than 50 SIFT tracks tie the frames before to the frames after
   // (clip frame numbers); [] = none found, absent = too few SIFT tracks to tell
-  "track_gaps": [{"from_frame": 72, "to_frame": 80, "tracks": 0}]
+  "track_gaps": [{"from_frame": 72, "to_frame": 80, "tracks": 0}],
+  // real-world size from the two single-image metric depth models (niko.scale); null for a tripod
+  // or when neither model ran. Used for blender.json only when "reliable" (models <= 50 % apart).
+  "metric_scale": {"metres_per_unit": 3.41, "agree_pct": 12.0, "reliable": true,
+                   "models": {"unidepth_v2": {"metres_per_unit": 3.2, "spread_pct": 9.1, "frames": 30, "source": "..."},
+                              "da3_nested": {"metres_per_unit": 3.6, "spread_pct": 7.4, "frames": 60, "source": "..."}}}
 }
 ```
 
@@ -148,8 +153,24 @@ The values `import_blender.py` uses, for the add-on: `width`, `height`, `fps`, `
 `frame_start`, `sensor_width`, `pixel_aspect_x/y`, `frames[]` (`frame`, `valid`, `matrix_world`
 4x4 Blender camera in the solve's world, `lens` mm, `shift_x`, `shift_y`), `frames_dir`,
 `first_frame_file`, `points`, and `world`: a 4x4 taking the solve's world to a levelled Blender
-world (ground plane on Z = 0, first camera looking along +Y, median depth 10 units), applied by
-the add-on as an empty that parents camera and points.
+world (up from the cameras' level right axes when the camera turns, else from the ground plane;
+the ground on Z = 0; first camera looking along +Y), applied by the add-on as an empty
+that parents camera and points. `units` says what one Blender unit is: `{"kind": "metres_estimated",
+"metres_per_unit", "agree_pct"}` when the metric depth models agree (then 1 unit is about 1 m), else
+`{"kind": "arbitrary"}` (median depth 10 units). `median_depth` is the median camera-to-point depth
+in the solve's units (times the world's scale for Blender units).
+
+### `real_scale.json` (add-on, optional)
+
+Written next to `selected/` by "Set real size" (two points or camera height): `factor` (multiplies
+`world`, cumulative), `how`. When present it wins over `units`.
+
+### Scene mesh (`niko mesh <solve> --quality fast|good|high`)
+
+`selected/mesh.ply` (coloured surface, holes up to ~10 voxels filled), `selected/mesh_sim.ply`
+(about 150k triangles, no non-manifold edges, bigger holes filled: for collisions and simulation),
+`selected/dense_points.ply` (the fused stereo points), all in the solve's world like `points.ply`.
+Stereo points on moving things (the solve's masks) and far away are removed before the surface.
 
 ### `shot.json`
 

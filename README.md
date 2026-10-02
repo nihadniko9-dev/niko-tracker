@@ -2,9 +2,9 @@
 
 Camera tracker research prototype and benchmark: solves the camera of a video shot, checks itself
 on tracks it never saw, and hands the result to Blender and After Effects.
-Author: Nihad Jihad ("Niko"), Art Director and Motion Designer. Personal, non-commercial.
+Author: Nihad Jihad, Art Director and Motion Designer. Personal, non-commercial.
 
-**Copyright (c) 2026 Nihad Jihad ("Niko"). All rights reserved.** The code is visible so the
+**Copyright (c) 2026 Nihad Jihad. All rights reserved.** The code is visible so the
 releases can be downloaded; it may not be copied, modified or redistributed. You may install and
 update the official releases for personal, non-commercial use. See [LICENSE](LICENSE).
 Third-party components keep their own licenses ([docs/LICENSES.md](docs/LICENSES.md)).
@@ -55,9 +55,19 @@ measure its lens; the solve then says "lens uncertain" and this option fixes it.
 ## Blender add-on
 
 First-time users: [Sorani Kurdish walkthrough](docs/QUICKSTART.ku.md).
-The 0.3.9 interface guides you through choosing a video, solving the camera and checking the result.
-Advanced settings reveal lens controls and mask customization. Low pixel error is not a guarantee:
+The interface guides you through choosing a video, solving the camera and checking the result.
+Before solving, choose what to ignore: nothing (the masks step is skipped), some or all moving things. Advanced settings reveal the lens controls. Low pixel error is not a guarantee:
 review lens/tracking warnings and check for sliding before placing your final 3D objects.
+
+Real size: a solve from one video has no unit. The engine estimates metres from two single-image
+depth models (UniDepth, DA3) and uses it only when they agree within 50 %; otherwise set it in
+Blender (Use your camera > Real size: two points at a known distance, or the camera height). The
+camera, points and mesh scale together and the size is saved with the solve (`real_scale.json`).
+
+Scene mesh (`niko mesh <solve> --quality fast|good|high`): full-resolution frames for good/high,
+points on moving things and far junk removed, floating pieces dropped, small holes filled, light
+smoothing; `selected/mesh_sim.ply` is a simplified hole-filled copy for physics (Blender: Add
+simulation collider).
 
 CLI reuse is conservative: only a completed solve with matching source contents, settings and
 engine code can be reused. Older solves remain loadable; use a new output folder to solve them

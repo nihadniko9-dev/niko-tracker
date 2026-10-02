@@ -72,6 +72,14 @@ def _doctor(args) -> int:
     return run_doctor(as_json=args.json)
 
 
+def _prompts(text):
+    """--prompts: None = the default list; "none" (or an empty value) = mask nothing, no masks step."""
+    if text is None:
+        return None
+    words = [w.strip() for w in text.split(",") if w.strip()]
+    return [] if not words or [w.lower() for w in words] == ["none"] else words
+
+
 def _solve(args) -> int:
     from pathlib import Path
 
@@ -80,7 +88,7 @@ def _solve(args) -> int:
     clip = Path(args.clip)
     out = Path(args.out) if args.out else clip.with_suffix("").parent / f"{clip.stem}_niko"
     methods = args.methods.split(",") if args.methods else DEFAULT_METHODS
-    prompts = args.prompts.split(",") if args.prompts else None
+    prompts = _prompts(args.prompts)
     try:
         report = solve(clip, out, methods=methods, prompts=prompts, fps=args.fps, frame_start=args.frame_start,
                        reuse=args.reuse, focal_mm=args.focal_mm, sensor_mm=args.sensor_mm, stride=args.stride)
@@ -111,7 +119,8 @@ def _export_ae(args) -> int:
 def _mesh(args) -> int:
     from .mesh import build_mesh
 
-    r = build_mesh(args.solve_dir, max_images=args.images, max_image_size=args.size, reuse_stereo=args.reuse)
+    r = build_mesh(args.solve_dir, quality=args.quality, max_images=args.images, max_image_size=args.size,
+                   reuse_stereo=args.reuse)
     print("mesh:", r["mesh"])
     return 0
 
@@ -136,7 +145,8 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("clip")
     p.add_argument("-o", "--out", help="output folder (default: <clip>_niko next to the clip)")
     p.add_argument("--methods", help="comma list: colmap_global,colmap_incremental,megasam,da3")
-    p.add_argument("--prompts", help='comma list of SAM 3 prompts (default: person,car,animal,sky,water)')
+    p.add_argument("--prompts", help='comma list of SAM 3 prompts (default: person,car,animal,sky,water); '
+                                     '"none": ignore nothing (no masks)')
     p.add_argument("--fps", type=float, help="fps for image folders")
     p.add_argument("--frame-start", type=int, default=1)
     p.add_argument("--focal-mm", type=float, help="known lens focal length in mm (kept fixed in the solve)")
@@ -161,8 +171,10 @@ def main(argv: list[str] | None = None) -> int:
 
     p = sub.add_parser("mesh", help="editable 3D mesh of the static scene (multi-view stereo on the solve)")
     p.add_argument("solve_dir", help="output folder of niko solve")
-    p.add_argument("--images", type=int, default=40, help="frames used for stereo (spread over the shot)")
-    p.add_argument("--size", type=int, default=1280, help="max image size for stereo")
+    p.add_argument("--quality", choices=("fast", "good", "high"), default="good",
+                   help="fast: 40 frames at 1280 px; good: 60 at 1600; high: 90 at 2400 (slower)")
+    p.add_argument("--images", type=int, help="frames used for stereo (overrides the quality)")
+    p.add_argument("--size", type=int, help="max image size for stereo (overrides the quality)")
     p.add_argument("--reuse", action="store_true", help="keep the earlier stereo points, redo the surface")
     p.set_defaults(func=_mesh)
 

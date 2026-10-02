@@ -2,7 +2,7 @@
 name = "niko"
 version = "0.1.0"
 description = "Niko Tracker Engine - camera solver prototype and benchmark (orchestrator)"
-authors = [{ name = "Nihad Jihad (Niko)" }]
+authors = [{ name = "Nihad Jihad" }]
 readme = "README.md"
 requires-python = ">=3.12,<3.13"
 dependencies = [

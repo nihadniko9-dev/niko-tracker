@@ -187,7 +187,7 @@ footer {{ color:var(--muted); font-size:12px; margin:18px 0; }}
 <h1>Niko Tracker - {title}</h1>
 <div class="muted small">{subtitle}</div>
 {cards}
-<footer>Niko Tracker Engine - Nihad Jihad ("Niko"). Every number measured by the engine on these clips.</footer>
+<footer>Niko Tracker Engine - Nihad Jihad. Every number measured by the engine on these clips.</footer>
 </main></body></html>"""
 
 

@@ -2,7 +2,7 @@
 engine code and latest.json, which the add-on's update button reads; with --engine also the engine
 image parts (installer/engine/build_engine.ps1).
 
-Niko Tracker - author: Nihad Jihad ("Niko").
+Niko Tracker - author: Nihad Jihad.
 usage: python scripts/publish_release.py (<release folder> | --github) [--notes "what changed"]
                                          [--engine | --engine-image <version>] [--engine-dir D:\\NikoEngine]
   <release folder>  a shared drive, USB stick or cloud folder (Preferences > Niko Tracker folder)

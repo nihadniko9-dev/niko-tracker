@@ -1,6 +1,6 @@
 # Niko Tracker Engine — Design (Phase 1)
 
-Author: Nihad Jihad ("Niko"), Art Director and Motion Designer.
+Author: Nihad Jihad, Art Director and Motion Designer.
 Personal, non-commercial research tool. See `BRIEF.md` for the full brief.
 
 ## 1. Where things live

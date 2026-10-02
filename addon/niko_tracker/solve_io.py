@@ -44,6 +44,26 @@ def selected_dir(folder: str) -> str:
     return os.path.join(folder, "selected")
 
 
+REAL_SCALE = "real_scale.json"
+
+
+def read_real_scale(folder: str) -> dict:
+    """The size the user set in Blender ({"factor": k, "how": ...}; k multiplies the engine's
+    world), {} when none was set."""
+    try:
+        with open(os.path.join(selected_dir(folder), REAL_SCALE), encoding="utf-8") as fh:
+            return json.load(fh)
+    except (OSError, ValueError):
+        return {}
+
+
+def write_real_scale(folder: str, factor: float, how: str) -> None:
+    import time
+
+    with open(os.path.join(selected_dir(folder), REAL_SCALE), "w", encoding="utf-8") as fh:
+        json.dump({"factor": factor, "how": how, "set": time.strftime("%Y-%m-%d %H:%M")}, fh, indent=1)
+
+
 class Solve:
     """Everything the add-on shows about one solve."""
 
@@ -81,6 +101,19 @@ class Solve:
         if c.startswith("/mnt/") and len(c) > 6 and c[6] == "/":
             c = f"{c[5].upper()}:\\" + c[7:].replace("/", "\\")
         return os.path.abspath(c) if c and os.path.isfile(c) else None
+
+    def size_text(self) -> str:
+        """What one Blender unit means in this scene."""
+        real = read_real_scale(self.folder)
+        if real:
+            return f"Real size: {real.get('how', 'set by you')}"
+        units = self.blender.get("units") or {}
+        if units.get("kind") == "metres_estimated":
+            apart = units.get("agree_pct")
+            return ("Size: about metres (estimated" + (f", models {apart:.0f}% apart)" if apart is not None else ")"))
+        if self.report.get("metric_scale"):
+            return "Size unknown: the depth models disagree. Set it with a known distance or the camera height."
+        return "Size unknown: set it with a known distance or the camera height."
 
     @property
     def average_px(self):

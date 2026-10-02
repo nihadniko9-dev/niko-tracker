@@ -30,33 +30,67 @@ GREEN, AMBER, RED = (80, 200, 60), (40, 170, 255), (60, 60, 230)  # BGR
 PATCH = (0, 230, 255)  # yellow
 
 
-def fit_ground(X: np.ndarray, up: np.ndarray, rng, iters: int = 800):
-    """RANSAC plane with the most inliers among planes within ~45 deg of `up`.
+def fit_ground(X: np.ndarray, up: np.ndarray, rng, iters: int = 800, min_cos: float = 0.7,
+               cameras: np.ndarray | None = None, min_height: float = 0.0,
+               right: np.ndarray | None = None, max_roll_deg: float | None = None):
+    """RANSAC plane with the most inliers among planes whose normal is within acos(min_cos) of `up`
+    (0.7: ~45 deg). With `cameras`, only planes the cameras are above by `min_height` (median): a
+    plane through or above the cameras is not a ground. With `right` (the cameras' mean right axis),
+    only planes that leave the camera rolled by at most `max_roll_deg`.
+    The checks are made again on the least-squares refit: a plane tilted just enough to clear the
+    cameras can refit to one through them; that layer of points is then set aside and the search
+    runs again (up to 3 rounds).
     Returns (normal pointing up, d with n.x + d = 0, inlier mask) or None."""
     if len(X) < 50:
         return None
     scale = float(np.median(np.linalg.norm(X - np.median(X, 0), axis=1)))
     thr = 0.01 * scale
-    best = None
-    for _ in range(iters):
-        p = X[rng.choice(len(X), 3, replace=False)]
-        n = np.cross(p[1] - p[0], p[2] - p[0])
-        if np.linalg.norm(n) < 1e-12:
-            continue
-        n /= np.linalg.norm(n)
-        if abs(n @ up) < 0.7:
-            continue
-        inl = np.abs(X @ n - n @ p[0]) < thr
-        if best is None or inl.sum() > best[1].sum():
-            best = (n, inl)
-    if best is None or best[1].sum() < 30:
-        return None
-    c = X[best[1]].mean(0)  # least-squares refit on the inliers: smallest-eigenvalue direction
-    D = X[best[1]] - c      # (a full SVD of D would build an N x N matrix: 26 GB for 57k points)
-    n = np.linalg.eigh(D.T @ D)[1][:, 0]
-    if n @ up < 0:
-        n = -n
-    return n, -n @ c, np.abs(X @ n - n @ c) < thr
+    sin_roll = None
+    if right is not None and max_roll_deg is not None:
+        right = right / np.linalg.norm(right)
+        sin_roll = np.sin(np.radians(max_roll_deg))
+    checked = cameras is not None or sin_roll is not None
+
+    def allowed(n, p0):
+        """n turned to point up, or None when the plane is not a possible ground."""
+        if abs(n @ up) < min_cos:
+            return None
+        if n @ up < 0:
+            n = -n
+        if cameras is not None and np.median((cameras - p0) @ n) < min_height:
+            return None
+        if sin_roll is not None and abs(n @ right) > sin_roll:
+            return None
+        return n
+
+    pool = np.ones(len(X), bool)
+    for _ in range(3 if checked else 1):
+        idx = np.nonzero(pool)[0]
+        if len(idx) < 50:
+            return None
+        best = None
+        for _ in range(iters):
+            p = X[idx[rng.choice(len(idx), 3, replace=False)]]
+            n = np.cross(p[1] - p[0], p[2] - p[0])
+            if np.linalg.norm(n) < 1e-12:
+                continue
+            n = allowed(n / np.linalg.norm(n), p[0])
+            if n is None:
+                continue
+            inl = (np.abs(X @ n - n @ p[0]) < thr) & pool
+            if best is None or inl.sum() > best[1].sum():
+                best = (n, inl)
+        if best is None or best[1].sum() < 30:
+            return None
+        c = X[best[1]].mean(0)  # least-squares refit on the inliers: smallest-eigenvalue direction
+        D = X[best[1]] - c      # (a full SVD of D would build an N x N matrix: 26 GB for 57k points)
+        n = np.linalg.eigh(D.T @ D)[1][:, 0]
+        if n @ up < 0:
+            n = -n
+        if not checked or allowed(n, c) is not None:
+            return n, -n @ c, np.abs(X @ n - n @ c) < thr
+        pool &= ~best[1]
+    return None
 
 
 def _patch(center: np.ndarray, n: np.ndarray, size: float, samples: int = 24) -> list[np.ndarray]:

@@ -1,5 +1,5 @@
 ; Niko Tracker - Windows installer (Inno Setup 6).
-; Niko Tracker Engine - author: Nihad Jihad ("Niko"). Copyright (c) 2026, all rights reserved.
+; Niko Tracker Engine - author: Nihad Jihad. Copyright (c) 2026, all rights reserved.
 ;
 ; Build:  installer\build.ps1   ->  installer\Output\NikoTracker-Setup-<version>.exe
 ; The EXE is small: the engine (a prebuilt WSL2 image with the Python environments, installer\engine)
@@ -18,7 +18,7 @@
 #ifndef AppVersion
   #define AppVersion "0.3.8"
 #endif
-#define AppPublisher "Nihad Jihad (Niko)"
+#define AppPublisher "Nihad Jihad"
 
 [Setup]
 AppId={{6A33BBFA-634D-4DE8-9A4E-C853FD59BE42}
@@ -42,7 +42,7 @@ SetupIconFile=art\niko.ico
 UninstallDisplayIcon={app}\niko.ico
 UninstallDisplayName={#AppName} {#AppVersion}
 LicenseFile=..\LICENSE
-AppCopyright=Copyright (c) 2026 Nihad Jihad (Niko). All rights reserved.
+AppCopyright=Copyright (c) 2026 Nihad Jihad. All rights reserved.
 InfoAfterFile=after_install.txt
 OutputDir=Output
 

@@ -359,8 +359,13 @@ def solve(clip: str | Path, out_dir: str | Path, methods=DEFAULT_METHODS, prompt
     opts = {"prompts": prompts} if prompts else {}
     if hw.get("sam3_chunk_frames"):
         opts["chunk_frames"] = int(hw["sam3_chunk_frames"])
-    m = reused(out_dir / "jobs/masks/result.json") or stage(
-        "masks", lambda: run_backend("sam3", "masks", out_dir, out_dir / "jobs/masks", opts))
+    if prompts is not None and not prompts:  # the user chose to ignore nothing: no masks step at all
+        m = None
+        report["stages"]["masks"] = {"ok": True, "seconds": 0.0, "skipped": "nothing to ignore"}
+        log("[masks] off: nothing is ignored (every pixel is tracked, moving things included)")
+    else:
+        m = reused(out_dir / "jobs/masks/result.json") or stage(
+            "masks", lambda: run_backend("sam3", "masks", out_dir, out_dir / "jobs/masks", opts))
     if m:
         log(f"[masks] {m['runtime_s']:.1f}s, excluded {100 * m['stats']['mean_excluded_fraction']:.1f}% "
             f"of pixels, objects {m['stats']['objects_per_prompt']}")
@@ -468,8 +473,19 @@ def solve(clip: str | Path, out_dir: str | Path, methods=DEFAULT_METHODS, prompt
             f"{sel.get('reproj_source')} observations within 3 px), "
             f"{int(cands[best].valid.sum())}/{cands[best].n_frames} frames")
         trk = cands[best]
+        metric = stage("metric_scale", lambda: _metric_scale(trk, out_dir, tracks))
+        if metric:
+            report["metric_scale"] = metric
+            agree = metric.get("agree_pct")
+            apart = f"the two depth models {agree:.0f} % apart" if agree is not None else "one depth model only"
+            if metric.get("reliable"):
+                log(f"[scale] about {metric['metres_per_unit']:.4g} m per solve unit ({apart}): the Blender scene is "
+                    "in metres, approximately; set the exact size in Blender from a known distance")
+            else:
+                log(f"[scale] real size unknown ({apart}): set it in Blender from a known distance or the camera height")
+        use = metric if metric and metric.get("reliable") else None
         stage("export", lambda: export_solve(trk, out_dir / "candidates" / best / "points.ply", out_dir / "selected",
-                                             out_dir / "frames", f"000000.{shot['frame_format']}"))
+                                             out_dir / "frames", f"000000.{shot['frame_format']}", metric=use))
         from ..export_ae import export_after_effects
         stage("export_ae", lambda: export_after_effects(out_dir, log=log))
         fe = stage("frame_errors", lambda: frame_errors(trk, tracks, sift_holdout))
@@ -508,6 +524,15 @@ def solve(clip: str | Path, out_dir: str | Path, methods=DEFAULT_METHODS, prompt
     if result["ok"]:
         (out_dir / "reuse.json").write_text(json.dumps(fingerprint, indent=1), encoding="utf-8")
     return result
+
+
+def _metric_scale(trk: CameraTrack, out_dir: Path, tracks: dict) -> dict | None:
+    """Approximate metres per solve unit (niko.scale), from the SIFT tracks when there are any."""
+    from ..scale import estimate_metric_scale
+
+    sift = out_dir / "sift" / "sift_tracks.npz"
+    src = dict(np.load(sift)) if sift.exists() else tracks
+    return estimate_metric_scale(trk, src["xy"], src["vis"], out_dir)
 
 
 def _finish(report: dict, out_dir: Path, t0: float) -> dict:

@@ -2,6 +2,55 @@
 
 Newest first. Every claim here was run on this machine; the command and the numbers are listed.
 
+## 2026-10-02 (late) — 0.4.0: optional masks, real size, better scene mesh, correct ground
+
+Nihad (on 0.3.9, clip DJI 0079): keep his 0.3.9 changes, credit "Nihad Jihad" without "Niko",
+masks optional before solving, mesh and camera at real size, a clean complete mesh that works for
+simulation, test everything. His 0.3.9 work is commit 0b7012d; this builds on it unchanged.
+
+- **Masks optional.** Add-on: "Ignore moving things" switch (on by default) with All / None and
+  per-kind toggles; off (or nothing chosen) runs `niko solve --prompts none`: no masks stage at all.
+  Before, an empty choice fell back to the default prompts. Test: 30-frame synthetic solve without
+  masks (`$NIKO_HOME/solves/test_nomasks`): 0.276 px, 190 s, targets met.
+- **Real size.** `niko.scale`: the two single-image metric depth models already in the pipeline
+  (UniDepth v2 inside MegaSaM, DA3-Nested) are compared with the solve's own tracks, frame by frame;
+  the Blender world is put in metres only when they agree within 50 % (`metric_scale` in solve.json,
+  `units` in blender.json). On Nihad's clips they are 46-1984 % apart: only clip 02 qualifies
+  (6.1 m/unit, 46 %); the others say "size unknown" instead of guessing. Exact sizing in the add-on:
+  "Real size" -> From two points (a known distance) or Camera height, saved as real_scale.json and
+  kept on rebuild (`tests/blender/addon_size_check.py`: height 4.36 -> 50.00 m, two points 10.000 m).
+  Camera display size, clip range and point size follow the scene's scale.
+- **Scene mesh.** Full-resolution stereo; stereo points on the solve's masks (by projection, no
+  painted frames) and far away are removed; Poisson with a density / distance trim; floating pieces
+  removed; Taubin smoothing; small holes filled (Open3D 0.20's fill_holes returns garbage colours:
+  nearest-vertex colours instead). Quality fast / good / high. New `mesh_sim.ply` (about 150k
+  triangles, no non-manifold edges, bigger holes filled) and an add-on button that adds it as a
+  hidden, wireframe Collision object ("Niko scene collider").
+  Against synthetic truth (drone_orbit, `scripts/dev/mesh_check.py`, % of median depth):
+  pieces 562 -> 18, accuracy 0.35 -> 0.35 %, precision at 1 % / 2 % 98.6 / 99.7 -> 98.3 / 99.7,
+  recall 32.2 / 40.3 -> 33.1 / 40.1. A radius-outlier filter and a finer grid were measured and
+  dropped (recall 18.9 %). Clip DJI 0079 (4K, good quality, ~20 min): 398 396 fused points, 30 437 on
+  water / sky and 4 962 far away removed, 1 074 212 triangles (492 floating pieces removed),
+  simulation copy 152 704 triangles; old vs new render: `reports/mesh_0079_old_vs_new.png`.
+- **Ground and up** (Blender world and After Effects world, `export_ae.world_alignment`). Measured
+  against synthetic truth (`scripts/dev/ground_check.py --gt`): up was 18, 12.5, 48.5, 3.5, 3.2 deg
+  off on dolly_forward, drone_high_low_parallax, zoom_in (ground above the camera),
+  pan_low_parallax, rolling_shutter_handheld; on Nihad's clip 02 the "ground" ran through the camera.
+  Now: up from the cameras' level right axes when the camera turns (`level_up`); the ground must be
+  2 % of the median depth below the cameras, roll the camera at most 8 deg, be re-checked after the
+  refit, and, when it decides up, hold 5 % of the points. Result: every synthetic shot within
+  0.0-0.5 deg (tripods 1.7 / 2.7 -> 0.0 / 0.1) except dolly_forward (18 deg: its points are up to 7 m
+  under the true floor) and tele_orbit_short (7.9 deg: the solve's own rotation); clip 02 now says
+  no ground (Camera height asks for two points). Real clip 03: vertical guides over the porch pillars
+  agree with the new up (`scripts/dev/ground_view.py`). Nihad's solves and report copies re-levelled
+  (`scripts/dev/backfill_scale.py`), After Effects scripts re-exported.
+- **Name**: "Nihad Jihad" everywhere (licence, add-on, installer and its art, docs, exports, GitHub
+  description); no "Niko" nickname.
+- Checks: `pytest -m "not smoke"` 82 passed (new: tests/test_scale.py, tests/test_level.py); smoke
+  1 passed in 209.7 s (0.272 px, 0.35 m/unit, models 37 % apart); Blender background check on
+  clips 02 / 03 / 04 / DJI 0079 / no-masks: OK; size check OK; update check 0.4.0 -> 0.4.1 OK; GUI
+  screenshot of the new panel checked.
+
 ## 2026-10-02 — local 0.3.9 preview: guided workflow and safer results
 
 - User approved implementation after the read-only review. Local changes only; no GitHub release

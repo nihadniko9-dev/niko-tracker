@@ -52,6 +52,8 @@ class NikoLogLine(bpy.types.PropertyGroup):
 
 class NikoSceneProps(bpy.types.PropertyGroup):
     clip: StringProperty(name="Clip", subtype="FILE_PATH", description="Video file or first image of a sequence")
+    use_masks: BoolProperty(name="Ignore moving things", default=True,
+                            description="Mask moving things (people, cars, sky, water, ...) out of the tracking. Off: every pixel is tracked and the masks step is skipped")
     ignore_person: BoolProperty(name="Person", default=True)
     ignore_car: BoolProperty(name="Car", default=True)
     ignore_animal: BoolProperty(name="Animal", default=True)
@@ -82,11 +84,18 @@ class NikoSceneProps(bpy.types.PropertyGroup):
     show_log: BoolProperty(name="Show engine log", default=False)
     advanced: BoolProperty(name="Advanced settings", default=False,
                            description="Set a known lens or customize objects excluded from tracking")
+    mesh_quality: EnumProperty(name="Mesh quality", default="GOOD", items=[
+        ("FAST", "Fast", "40 frames at 1280 px: a few minutes"),
+        ("GOOD", "Good", "60 full-resolution frames at 1600 px: more detail, takes longer"),
+        ("HIGH", "High", "90 frames at 2400 px: the most detail, the longest")])
     show_points: BoolProperty(name="Show points", default=True)
     show_hud: BoolProperty(name="Show error on camera view", default=True)
     show_graph: BoolProperty(name="Show error graph on timeline", default=True)
 
     def prompts(self) -> list[str]:
+        """What to mask out; [] = nothing (the engine then skips the masks step)."""
+        if not self.use_masks:
+            return []
         out = [n for n in ("person", "car", "animal", "sky", "water") if getattr(self, f"ignore_{n}")]
         out += [w.strip() for w in self.ignore_extra.split(",") if w.strip()]
         return out

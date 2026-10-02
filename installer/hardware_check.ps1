@@ -1,5 +1,5 @@
 # Niko Tracker - hardware and system check for the installer (and for `niko doctor` on Windows).
-# Niko Tracker Engine - author: Nihad Jihad ("Niko").
+# Niko Tracker Engine - author: Nihad Jihad.
 #
 # Prints one JSON object: what was found, a settings profile for this machine and the blockers.
 #   powershell -ExecutionPolicy Bypass -File installer\hardware_check.ps1 [-Json path]

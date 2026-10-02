@@ -59,22 +59,38 @@ class NIKO_PT_clip(_Base, bpy.types.Panel):
         col.operator("niko.load", text="Load a finished solve", icon="FILE_FOLDER")
 
 
-class NIKO_PT_ignore(_Base, bpy.types.Panel):
-    bl_label = "Objects to ignore"
-    bl_parent_id = "NIKO_PT_solve"
-    bl_options = {"DEFAULT_CLOSED"}
+MASK_KINDS = (("person", "USER"), ("car", "AUTO"), ("animal", "MONKEY"), ("sky", "LIGHT_SUN"),
+              ("water", "MOD_OCEAN"))
 
-    @classmethod
-    def poll(cls, context):
-        return context.scene.niko.advanced
+
+class NIKO_PT_ignore(_Base, bpy.types.Panel):
+    """Chosen before solving: mask nothing, some or all moving things (the switch in the header)."""
+    bl_label = "Ignore moving things"
+    bl_parent_id = "NIKO_PT_main"
+
+    def draw_header(self, context):
+        self.layout.enabled = not context.scene.niko.running
+        self.layout.prop(context.scene.niko, "use_masks", text="")
 
     def draw(self, context):
         n = context.scene.niko
-        grid = self.layout.grid_flow(row_major=True, columns=3, even_columns=True, align=True)
-        for key, icon in (("person", "USER"), ("car", "AUTO"), ("animal", "MONKEY"), ("sky", "LIGHT_SUN"),
-                          ("water", "MOD_OCEAN")):
+        lay = self.layout
+        lay.enabled = not n.running
+        if not n.use_masks:
+            col = lay.column(align=True)
+            col.scale_y = 0.8
+            col.label(text="Off: every pixel is tracked.", icon="INFO")
+            col.label(text="Faster; use it when nothing moves.")
+            return
+        row = lay.row(align=True)
+        row.operator("niko.masks_all", text="All", icon="CHECKBOX_HLT").value = True
+        row.operator("niko.masks_all", text="None", icon="CHECKBOX_DEHLT").value = False
+        grid = lay.grid_flow(row_major=True, columns=3, even_columns=True, align=True)
+        for key, icon in MASK_KINDS:
             grid.prop(n, f"ignore_{key}", toggle=True, icon=icon)
-        self.layout.prop(n, "ignore_extra", text="", icon="ADD")
+        lay.prop(n, "ignore_extra", text="", icon="ADD")
+        if not n.prompts():
+            lay.label(text="Nothing chosen: nothing is ignored.", icon="INFO")
 
 
 class NIKO_PT_solve(_Base, bpy.types.Panel):
@@ -96,7 +112,8 @@ class NIKO_PT_solve(_Base, bpy.types.Panel):
                 col.prop(n, "sensor", text="")
         else:
             settings.label(text="Lens: automatic" if n.lens_mode == "AUTO" else f"Known lens: {n.focal_mm:g} mm")
-            settings.label(text="Object masks: enabled")
+            chosen = n.prompts()
+            settings.label(text=("Ignoring: " + ", ".join(chosen))[:44] if chosen else "Ignoring: nothing")
         if n.running:
             row = lay.row()
             row.scale_y = 1.6
@@ -281,11 +298,22 @@ class NIKO_PT_use(_Base, bpy.types.Panel):
             box.label(text="Click points, Shift-click for more. Tab to leave.", icon="INFO")
         else:
             row.operator("niko.edit_points", text="Pick points", icon="RESTRICT_SELECT_OFF")
+        s = solve_io.get(context.scene.niko.solve_dir)
+        size = lay.box()
+        size.label(text="Real size (metres)", icon="DRIVER_DISTANCE")
+        for chunk in _wrap(s.size_text(), 42):
+            size.label(text=chunk)
+        row = size.row(align=True)
+        row.operator("niko.set_size", text="From two points", icon="DRIVER_DISTANCE").mode = "POINTS"
+        row.operator("niko.set_size", text="Camera height", icon="OUTLINER_OB_CAMERA").mode = "HEIGHT"
         col = lay.column(align=True)
         col.scale_y = 1.3
         col.operator("niko.rebuild", icon="OUTLINER_OB_CAMERA")
-        col.operator("niko.mesh", icon="MESH_ICOSPHERE")
+        row = col.row(align=True)
+        row.prop(context.scene.niko, "mesh_quality", text="")
+        row.operator("niko.mesh", icon="MESH_ICOSPHERE")
         col.label(text="Scene mesh is optional.")
+        col.operator("niko.sim_mesh", icon="PHYSICS")
         mesh = bpy.data.objects.get("Niko scene mesh")
         if mesh is not None:
             projected = mesh.modifiers.get("Niko projection") is not None
@@ -298,7 +326,7 @@ class NIKO_PT_use(_Base, bpy.types.Panel):
         col.operator("niko.open_folder", icon="FILE_FOLDER")
 
 
-_classes = (NIKO_PT_main, NIKO_PT_clip, NIKO_PT_solve, NIKO_PT_ignore, NIKO_PT_result, NIKO_PT_use)
+_classes = (NIKO_PT_main, NIKO_PT_clip, NIKO_PT_ignore, NIKO_PT_solve, NIKO_PT_result, NIKO_PT_use)
 
 
 def register():
