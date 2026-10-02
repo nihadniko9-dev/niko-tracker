@@ -2,6 +2,27 @@
 
 Newest first. Every claim here was run on this machine; the command and the numbers are listed.
 
+## 2026-10-02 (afternoon) — on GitHub, updates from GitHub releases, After Effects check passed
+
+- **After Effects round trip with undistorted footage (clip 03)**: AE was open with an empty,
+  unchanged "Untitled Project" (Nihad: "After Effects is empty now, you can test"). ae_check now
+  accepts exactly that case (the in-AE guard double-checks). 24 nulls at 4 frames, AE vs niko max
+  **0.000703 px** over 96 projections; footage = the undistorted sequence (k1 -0.2470, k2 1.1905,
+  12.3 px at the frame corners) imported as a sequence; AE quit by itself afterwards.
+- **GitHub**: GitHub CLI 2.102.0 (official release, SHA-256 matches the published checksums,
+  signed GitHub, Inc.) in %LOCALAPPDATA%\Programs\gh; Nihad approved the device login himself
+  (account nihadniko9-dev). Nihad chose a public repository:
+  https://github.com/nihadniko9-dev/niko-tracker (181 files; his footage, reports, dist and
+  installer output stay out via .gitignore; scanned for tokens and keys first: none; his AE
+  project name taken out of these notes; commits use the GitHub no-reply address).
+- **Release v0.3.7**: NikoTracker-Setup-0.3.7.exe, niko_tracker-0.3.7.zip, latest.json
+  (`python scripts/publish_release.py --github --notes ...`).
+- **Add-on 0.3.7 updates from GitHub**: the update button uses the project folder when the
+  computer has it, else a release folder, else `releases/latest/download/latest.json` (preference
+  "Update address"); it only installs a newer version. `tests/blender/addon_update_check.py ...
+  github`: a copy marked 0.3.6 updated to 0.3.7 from the live release: OK. Release-folder variant
+  0.3.7 -> 0.3.8: OK. `pytest` 64 passed.
+
 ## 2026-10-02 — installer built, updates from a release folder, After Effects check made safe
 
 Nihad: "do those things now, you have the authority for what is needed".
