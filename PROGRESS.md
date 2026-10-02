@@ -2,6 +2,32 @@
 
 Newest first. Every claim here was run on this machine; the command and the numbers are listed.
 
+## 2026-10-02 (night) — own folder, cleanup
+
+Nihad: everything for work and updates in its own folder; the extra files removed.
+
+- **Project folder: `D:\Niko Tracker`** (was D:\Pack\Track Nhad, among editing packs). Copied with
+  robocopy (664 files, 537 MB, git history intact), then every path repointed: WSL env.sh
+  NIKO_REPO, the six envs' editable installs (24 .pth / direct_url files), add-on default folder,
+  WSL setup scripts, lock files, docs, the clip paths in Nihad's solves and their AE scripts.
+  Checked from the new folder: `pytest` 64 passed, `niko doctor` all backends and models OK,
+  Blender check clip 03 0.0005 px. The old folder could not be moved in place: this session's
+  own process (claude.exe) watches it; it goes to the Recycle Bin once the session has moved.
+  `START HERE.txt` explains the folder.
+- **Recycle Bin** (recoverable): D:\NikoEngine 7.95 GB (engine build output, now on GitHub;
+  its parts list is kept in `installer\engine\releases`), add-on zips 0.2.0-0.3.7, the AE check's
+  temp folder.
+- **Engine (WSL) extras** gathered in `~/niko/_extra_old` (40 GB listed, ~15 GB of it not shared
+  with kept data by hard links): earlier attempts and tests (DJI 0148 first try, four "New folder (4)"
+  attempts, clip 03 4 s cut, test_01 stride variant, smoke and reference solves), old runs
+  (cp2_colmap, cp2_colmap_v1, cp3_lens, smoke, smoke_solve, stride_test), pytest_tmp, 24 logs.
+  Nihad deletes them with `Delete extra Niko files.bat` (asks first). Kept: his solves test_01-04,
+  dji_0148 and DJI 0036 (solved by him today from Blender: 974 / 974 frames, 0.573 px, lens
+  measured (equally good fits within 1.7 %), no tracking break, mesh built, 42.5 min), the
+  benchmark runs cp3_full and tele_v1, the benchmark shots, models, envs.
+- `installer\build.ps1` takes the newest engine parts list <= the version from the repo, so a
+  code-only release still installs the last engine image.
+
 ## 2026-10-02 (evening) — all rights reserved; the engine image; installer installs everything
 
 Nihad: build the engine; on GitHub all rights must stay his, others may only install and update.
