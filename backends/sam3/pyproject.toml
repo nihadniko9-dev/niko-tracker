@@ -1,0 +1,13 @@
+[project]
+name = "niko-sam3"
+version = "0.1.0"
+description = "Niko adapter for the sam3 backend (job.json -> files, see docs/SCHEMA.md)"
+requires-python = ">=3.10"
+dependencies = []
+
+[build-system]
+requires = ["hatchling>=1.25"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["niko_sam3"]

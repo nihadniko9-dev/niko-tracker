@@ -1,0 +1,35 @@
+[project]
+name = "niko"
+version = "0.1.0"
+description = "Niko Tracker Engine - camera solver prototype and benchmark (orchestrator)"
+authors = [{ name = "Nihad Jihad (Niko)" }]
+readme = "README.md"
+requires-python = ">=3.12,<3.13"
+dependencies = [
+    "numpy>=2.1",
+    "scipy>=1.14",
+    "jsonschema>=4.23",
+    "opencv-python-headless>=4.10",
+    "huggingface-hub>=0.34",
+]
+
+[project.scripts]
+niko = "niko.cli:main"
+
+[dependency-groups]
+dev = ["pytest>=8.3"]
+
+[build-system]
+requires = ["hatchling>=1.25"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/niko"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = [
+    "blender: needs a Blender 5.2 executable (set NIKO_BLENDER or install it)",
+    "smoke: full pipeline on a synthetic shot; needs every backend env and the GPU",
+]
+addopts = "-m 'not smoke'"

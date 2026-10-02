@@ -1,0 +1,22 @@
+{
+  "name": "synthetic_tele",
+  "description": "Telephoto drone shots with little parallax, like Nihad's real clip 03 (80 mm-class lens, far from the subject, slow move): how well is the lens measured? 3 shots x 150 frames, 1920x1080 @ 25 fps, exact GT.",
+  "prompts": ["person", "car", "sky"],
+  "prompts_note": "same prompts as synthetic_v1",
+  "defaults": {
+    "width": 1920, "height": 1080, "fps": 25, "frame_start": 1, "n_frames": 150,
+    "samples": 48, "max_bounces": 3, "device": "GPU",
+    "scene": {"kind": "town", "extent": 90.0, "n_objects": 30, "clear_width": 3.5}
+  },
+  "shots": [
+    {"name": "tele_orbit_slow", "seed": 301, "tags": ["drone", "tele", "low_parallax"],
+     "camera": {"path": "orbit", "radius": 140.0, "height": 70.0, "arc_deg": 12, "start_deg": 20,
+                "target": [0, 0, 4], "lens": 80}},
+    {"name": "tele_line_side", "seed": 302, "tags": ["drone", "tele", "low_parallax"],
+     "camera": {"path": "line", "start": [-8, -130, 70], "end": [8, -130, 71], "yaw_deg": 90,
+                "yaw_drift_deg": 3, "pitch_deg": -26, "shake_deg": 0.03, "lens": 70, "seed": 12}},
+    {"name": "tele_orbit_short", "seed": 303, "tags": ["drone", "tele", "low_parallax"],
+     "camera": {"path": "orbit", "radius": 160.0, "height": 80.0, "arc_deg": 5, "start_deg": 60,
+                "target": [0, 0, 4], "lens": 100}}
+  ]
+}

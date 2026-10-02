@@ -1,0 +1,89 @@
+{
+  "name": "synthetic_v1",
+  "description": "Checkpoint 2 synthetic set: 21 shots x 150 frames, 1920x1080 @ 25 fps. Exact GT per shot in gt/cameras.json.",
+  "prompts": ["person", "car", "sky"],
+  "prompts_note": "no animals or water exist in these scenes; real clips keep the full default list",
+  "defaults": {
+    "width": 1920, "height": 1080, "fps": 25, "frame_start": 1, "n_frames": 150,
+    "samples": 48, "max_bounces": 3, "device": "GPU",
+    "scene": {"kind": "yard", "extent": 20.0, "n_objects": 30, "clear_width": 3.5}
+  },
+  "shots": [
+    {"name": "orbit_yard", "seed": 101, "tags": ["easy", "orbit"],
+     "camera": {"path": "orbit", "radius": 11.0, "height": 2.2, "arc_deg": 70, "start_deg": 20, "target": [0, 0, 1], "lens": 28}},
+
+    {"name": "orbit_people", "seed": 102, "tags": ["dynamic", "orbit"],
+     "camera": {"path": "orbit", "radius": 12.0, "height": 1.8, "arc_deg": 60, "start_deg": 200, "target": [0, 0, 1.2], "lens": 28},
+     "movers": {"people": 4, "cars": 1, "center": [0, 0], "radius": 7, "seed": 7}},
+
+    {"name": "walk_forward", "seed": 103, "tags": ["handheld"],
+     "camera": {"path": "walk", "start": [-13, -3, 1.6], "yaw_deg": 12, "speed": 1.3, "pitch_deg": -5, "shake_deg": 0.4, "lens": 24, "seed": 3}},
+
+    {"name": "walk_people", "seed": 104, "tags": ["handheld", "dynamic"],
+     "camera": {"path": "walk", "start": [-12, 2, 1.6], "yaw_deg": -8, "speed": 1.2, "pitch_deg": -4, "shake_deg": 0.5, "lens": 24, "seed": 4},
+     "movers": {"people": 6, "center": [-2, 0.5], "radius": 8, "seed": 11}},
+
+    {"name": "walk_turn", "seed": 105, "tags": ["handheld"],
+     "camera": {"path": "walk", "start": [-6, -10, 1.6], "yaw_deg": 60, "turn_deg": 70, "speed": 1.2, "pitch_deg": -6, "shake_deg": 0.7, "lens": 20, "seed": 5}},
+
+    {"name": "drone_flyover", "seed": 106, "tags": ["drone"],
+     "scene": {"kind": "town", "extent": 90.0},
+     "camera": {"path": "line", "start": [-55, -25, 60], "end": [35, -25, 62], "yaw_deg": 20, "yaw_drift_deg": 12, "pitch_deg": -45, "shake_deg": 0.08, "lens": 24, "seed": 6}},
+
+    {"name": "drone_orbit", "seed": 107, "tags": ["drone", "orbit"],
+     "scene": {"kind": "town", "extent": 90.0},
+     "camera": {"path": "orbit", "radius": 50.0, "height": 45.0, "arc_deg": 50, "start_deg": 10, "target": [0, 0, 5], "lens": 28}},
+
+    {"name": "drone_high_low_parallax", "seed": 108, "tags": ["drone", "low_parallax"],
+     "scene": {"kind": "town", "extent": 90.0},
+     "camera": {"path": "line", "start": [-5, -40, 120], "end": [5, -40, 121], "yaw_deg": 90, "yaw_drift_deg": 6, "pitch_deg": -55, "shake_deg": 0.05, "lens": 35, "seed": 8}},
+
+    {"name": "pan_low_parallax", "seed": 109, "tags": ["low_parallax"],
+     "camera": {"path": "pan", "eye": [0, -15, 1.6], "yaw_start_deg": 65, "yaw_sweep_deg": 45, "pitch_deg": -4, "nodal_offset_m": 0.05, "shake_deg": 0.1, "lens": 35, "seed": 9}},
+
+    {"name": "tripod_rotation_only", "seed": 110, "tags": ["rotation_only"],
+     "camera": {"path": "pan", "eye": [1, -15, 1.5], "yaw_start_deg": 60, "yaw_sweep_deg": 55, "tilt_sweep_deg": 10, "pitch_deg": -3, "nodal_offset_m": 0.0, "lens": 28}},
+
+    {"name": "whip_pan_blur", "seed": 111, "tags": ["motion_blur", "fast"],
+     "camera": {"path": "whip", "eye": [0, -11, 1.6], "yaw_start_deg": 40, "whip_deg": 90, "whip_start": 70, "whip_frames": 10, "slow_deg_per_frame": 0.12, "pitch_deg": -4, "shake_deg": 0.2, "lens": 28, "seed": 10},
+     "motion_blur": 0.5},
+
+    {"name": "zoom_in", "seed": 112, "tags": ["zoom"],
+     "camera": {"path": "pan", "eye": [2, -15, 1.7], "yaw_start_deg": 85, "yaw_sweep_deg": 6, "pitch_deg": -3, "nodal_offset_m": 0.0, "shake_deg": 0.15, "lens": 20, "lens_end": 70, "seed": 12}},
+
+    {"name": "zoom_walk", "seed": 113, "tags": ["zoom", "handheld"],
+     "camera": {"path": "walk", "start": [-12, 4, 1.6], "yaw_deg": -15, "speed": 1.0, "pitch_deg": -4, "shake_deg": 0.4, "lens": 24, "lens_end": 45, "seed": 13}},
+
+    {"name": "dolly_forward", "seed": 114, "tags": ["collinear"],
+     "camera": {"path": "line", "start": [0, -16, 1.5], "end": [0, -7, 1.5], "yaw_deg": 90, "pitch_deg": -3, "lens": 28}},
+
+    {"name": "noise_heavy", "seed": 115, "tags": ["noise", "orbit"],
+     "camera": {"path": "orbit", "radius": 10.0, "height": 2.0, "arc_deg": 60, "start_deg": 120, "target": [0, 0, 1], "lens": 28},
+     "noise": {"read": 6.0, "shot": 0.08}},
+
+    {"name": "distortion_barrel", "seed": 116, "tags": ["distortion", "handheld"],
+     "camera": {"path": "walk", "start": [-11, -6, 1.6], "yaw_deg": 25, "speed": 1.1, "pitch_deg": -6, "shake_deg": 0.4, "lens": 16, "seed": 16},
+     "distortion": {"k1": -0.10, "k2": 0.02}},
+
+    {"name": "distortion_pincushion", "seed": 117, "tags": ["distortion", "orbit"],
+     "camera": {"path": "orbit", "radius": 12.0, "height": 2.4, "arc_deg": 50, "start_deg": 300, "target": [0, 0, 1], "lens": 45},
+     "distortion": {"k1": 0.06, "k2": 0.0}},
+
+    {"name": "rolling_shutter_handheld", "seed": 118, "tags": ["rolling_shutter", "handheld", "fast"],
+     "camera": {"path": "walk", "start": [-10, 6, 1.6], "yaw_deg": -30, "turn_deg": 45, "speed": 1.8, "pitch_deg": -5, "shake_deg": 1.2, "lens": 24, "seed": 18},
+     "rolling_shutter": {"readout": 0.6, "row_exposure": 0.02}},
+
+    {"name": "car_follow", "seed": 119, "tags": ["dynamic", "drone"],
+     "scene": {"kind": "town", "extent": 90.0},
+     "camera": {"path": "follow", "distance": 9.0, "height": 2.2, "shake_deg": 0.25, "lens": 28, "seed": 19},
+     "movers": {"explicit": [{"kind": "car", "start": [-55, 9], "heading_deg": 0, "speed": 7.0}], "seed": 19}},
+
+    {"name": "crowd_orbit", "seed": 120, "tags": ["dynamic", "orbit"],
+     "camera": {"path": "orbit", "radius": 13.0, "height": 1.7, "arc_deg": 45, "start_deg": 60, "target": [0, 0, 1.2], "lens": 32},
+     "movers": {"people": 12, "cars": 2, "center": [0, 0], "radius": 9, "seed": 20}},
+
+    {"name": "low_texture_walk", "seed": 121, "tags": ["low_texture", "handheld"],
+     "scene": {"kind": "yard", "extent": 20.0, "n_objects": 18, "contrast": 0.35, "clear_width": 3.5},
+     "camera": {"path": "walk", "start": [-12, -1, 1.6], "yaw_deg": 5, "speed": 1.2, "pitch_deg": -5, "shake_deg": 0.4, "lens": 24, "seed": 21}}
+  ]
+}

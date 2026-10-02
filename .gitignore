@@ -1,0 +1,26 @@
+__pycache__/
+*.pyc
+.venv/
+.pytest_cache/
+*.egg-info/
+# heavy data never lives in the repo (see docs/DESIGN.md: $NIKO_HOME)
+runs/
+bench_data/
+reports/
+checkpoints/
+*.pt
+*.pth
+*.safetensors
+# secrets
+secrets.sh
+.env
+dist/
+# Nihad's own footage and built files never go to GitHub (installers are release assets)
+Test SHot/
+installer/Output/
+*.mp4
+*.MP4
+*.mov
+*.MOV
+*.blend1
+.claude/

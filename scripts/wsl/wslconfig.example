@@ -1,0 +1,7 @@
+# Optional: copy to %UserProfile%\.wslconfig, then run `wsl --shutdown`.
+# Default WSL2 memory is 50% of RAM (64 GB here). COLMAP dense steps, MegaSaM and
+# Blender renders running side by side are more comfortable with more.
+[wsl2]
+memory=96GB
+processors=24
+swap=32GB

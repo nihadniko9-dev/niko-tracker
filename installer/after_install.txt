@@ -1,0 +1,14 @@
+Niko Tracker - Nihad Jihad (Niko)
+
+Installed:
+  - The Blender add-on, in every Blender found on this computer and switched on.
+    Open Blender: the "Niko track" workspace tab (or press N in the 3D view, tab "Niko").
+
+Not installed by this setup yet:
+  - The tracking engine. It runs inside WSL2 (Ubuntu) with an NVIDIA GPU. On this computer it
+    is set up by hand for now (see the read me in the Start menu); the add-on finds it through
+    its preferences (Edit > Preferences > Add-ons > Niko Tracker).
+
+Updates: press the round arrow at the top of the Niko tab, then restart Blender. It installs the
+newest release from github.com/nihadniko9-dev/niko-tracker (or from a release folder set in
+Edit > Preferences > Add-ons > Niko Tracker > "Niko Tracker folder").
