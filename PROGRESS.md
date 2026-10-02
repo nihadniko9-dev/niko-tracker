@@ -44,6 +44,12 @@ Nihad: build the engine; on GitHub all rights must stay his, others may only ins
   (`engine_image` in latest.json), else says the new setup is needed; refuses while a solve runs.
   Tested with a local 0.3.8 release: add-on 0.3.7 -> 0.3.8 and engine code 0.3.7 -> 0.3.8,
   IMAGE_VERSION kept 0.3.7, engine imports and runs afterwards.
+- **Final image 0.3.8** (committed code c4c5ea4): 3.96 GiB tar.xz (4 250 215 260 bytes), 3 parts,
+  sha256 29324f88...4710. Final installer NikoTracker-Setup-0.3.8.exe (GitHub release URLs)
+  installed it from the local server (/ENGINEURL) in 187 s: code 0.3.8, image 0.3.8, `niko doctor`
+  0 failures (with the models copied in), smoke shot colmap_incremental+ba 0.274 px, rot 0.139°,
+  focal 1.15 %, targets met. Test engine, test install and server removed afterwards; this PC
+  keeps its development engine (Ubuntu-24.04). Not uploaded yet: 4.25 GB, waiting for Nihad.
 - Add-on 0.3.8 finds the engine distro by itself (NikoEngine, else Ubuntu-24.04).
 - `publish_release.py`: engine code tarball, `--engine` (upload the image parts) or
   `--engine-image <ver>`. `pytest` 64 passed; Blender checks OK.
