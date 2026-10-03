@@ -1,5 +1,5 @@
 # Build the Windows installer: installer\Output\NikoTracker-Setup-<version>.exe
-# Niko Tracker - author: Nihad Jihad.
+# Niko Tracker - author: Nihad Jiad Yousef.
 # Needs Inno Setup 6 (ISCC.exe; per-user install in %LOCALAPPDATA%\Programs\Inno Setup 6).
 # The engine it downloads: the newest installer\engine\releases\niko-engine-<v>.parts.json with
 # v <= this version (build_engine.ps1 writes them; a code-only release keeps the last image).

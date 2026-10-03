@@ -1,6 +1,6 @@
 """Artwork for the Windows installer: wizard side image, small corner image and the app icon.
 
-Niko Tracker - author: Nihad Jihad.
+Niko Tracker - author: Nihad Jiad Yousef.
 usage (any Python with Pillow, e.g. the da3 env): python installer/art/make_art.py
 Writes wizard_side_*.bmp, wizard_small_*.bmp and niko.ico next to this file. Fonts: Windows'
 Bahnschrift and Segoe UI (read from C:\\Windows\\Fonts, or /mnt/c/Windows/Fonts under WSL).
@@ -87,7 +87,7 @@ def side_image(scale: int) -> Image.Image:
     small = font("segoeui.ttf", round(9.5 * s))
     for k, line in enumerate(("Camera tracking", "for Blender and", "After Effects")):
         d.text((15 * s, (102 + 13 * k) * s), line, font=small, fill=GREY)
-    d.text((15 * s, h - 22 * s), "by Nihad Jihad", font=font("segoeui.ttf", round(8.5 * s)), fill=GREY)
+    d.text((15 * s, h - 22 * s), "by Nihad Jiad Yousef", font=font("segoeui.ttf", round(8.5 * s)), fill=GREY)
     return base.convert("RGB")
 
 

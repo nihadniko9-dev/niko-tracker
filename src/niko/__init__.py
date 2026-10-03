@@ -1,6 +1,6 @@
 """Niko Tracker Engine - orchestrator package.
 
-Author: Nihad Jihad, Art Director and Motion Designer.
+Author: Nihad Jiad Yousef, Art Director and Motion Designer.
 Personal, non-commercial research tool.
 """
 

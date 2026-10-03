@@ -155,7 +155,7 @@ def _pick_points(trk: CameraTrack, X: np.ndarray, vis: np.ndarray | None, k: int
 
 
 JSX = r'''// Niko Tracker - After Effects import
-// Niko Tracker Engine - author: Nihad Jihad. Generated file.
+// Niko Tracker Engine - author: Nihad Jiad Yousef. Generated file.
 // Run in After Effects: File > Scripts > Run Script File... and pick this file.
 // __NOTE__
 (function () {

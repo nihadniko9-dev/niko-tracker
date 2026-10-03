@@ -17,7 +17,7 @@ from ..geometry import K_to_blender, opencv_to_blender_matrix_world
 
 BPY_TEMPLATE = '''"""Import a Niko Tracker solve into Blender 5.2.
 
-Niko Tracker Engine - author: Nihad Jihad. Generated file, do not edit.
+Niko Tracker Engine - author: Nihad Jiad Yousef. Generated file, do not edit.
 Run:  blender --python import_blender.py      (or open it in Blender's Text Editor and Run)
 Creates the solved camera (one key per frame), the footage as camera background, and points.ply.
 """

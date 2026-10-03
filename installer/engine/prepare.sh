@@ -1,6 +1,6 @@
 #!/bin/bash
 # Niko Tracker - engine image, step 2: inside the imported build copy (never the working distro),
-# make it an engine that stands on its own. Author: Nihad Jihad.
+# make it an engine that stands on its own. Author: Nihad Jiad Yousef.
 # Run as root:  prepare.sh <engine-src.tar from git archive> <version>
 #   - the engine code is the committed tree of this version, at $NIKO_HOME/engine
 #   - the envs' editable installs pointed at the Windows checkout (/mnt/d/Niko Tracker): repointed

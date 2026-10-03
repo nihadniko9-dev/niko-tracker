@@ -1,5 +1,5 @@
 # Niko Tracker - install (or update) the Blender add-on into every installed Blender and enable it.
-# Niko Tracker Engine - author: Nihad Jihad.
+# Niko Tracker Engine - author: Nihad Jiad Yousef.
 #   powershell -ExecutionPolicy Bypass -File installer\install_addon.ps1 [-Source <addon\niko_tracker>] [-NoEnable]
 # For each "Blender x.y" in Program Files: copies the add-on to
 # %APPDATA%\Blender Foundation\Blender\x.y\scripts\addons\niko_tracker (older copy replaced), then

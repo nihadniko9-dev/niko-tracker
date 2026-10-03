@@ -1,6 +1,6 @@
 #!/bin/bash
 # Niko Tracker - engine image, step 1: the engine distro's root file system as one tar, slimmed.
-# Author: Nihad Jihad.
+# Author: Nihad Jiad Yousef.
 # Run as root inside the working engine distro (it is only read):  stage.sh <out.tar>
 # Left out, and why:
 #   footage, solves, runs, benchmark data, test folders, logs  - Nihad's work / not the engine
