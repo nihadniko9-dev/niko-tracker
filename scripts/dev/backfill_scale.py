@@ -20,7 +20,8 @@ from niko.pipeline.export import BPY_TEMPLATE, blender_world, median_depth, unit
 from niko.pipeline.solve import _metric_scale
 from niko.plyio import read_ply_xyz
 from niko.pipeline.ingest import probe_video
-from niko.telemetry import TELEMETRY_FILE, for_solve, save, summary, true_up
+from niko.sun import sun_for_solve
+from niko.telemetry import TELEMETRY_FILE, for_solve, read_telemetry, recorded_utc, save, summary, true_up
 
 
 def main():
@@ -35,32 +36,38 @@ def main():
     for d, copies in jobs:
         sel = d / "selected"
         trk = CameraTrack.load(sel / "cameras.json")
-        tel = for_solve(d)
-        if tel is not None and not (d / TELEMETRY_FILE).exists():
-            save(d / TELEMETRY_FILE, tel)
         shot = json.loads((d / "shot.json").read_text())
-        if "camera" not in shot:  # solves from before 0.5: which camera made the clip
-            tags = {}
-            if Path(shot["source"]).is_file():
-                tags = probe_video(Path(shot["source"])).get("camera_tags", {})
+        src = Path(shot["source"])
+        # telemetry and camera read again from the video when it is there (the readers improve: the Mini 5
+        # Pro's degrees, GoPro, Sony), else what the solve kept
+        tel = read_telemetry(src) if src.is_file() else None
+        if tel is not None:
+            save(d / TELEMETRY_FILE, tel)
+        else:
+            tel = for_solve(d)
+        if src.is_file() or "camera" not in shot:
+            tags = probe_video(src).get("camera_tags", {}) if src.is_file() else {}
             shot["telemetry"] = summary(tel) if tel else None
             shot["camera"] = identify(tags, shot["telemetry"], shot["width"], shot["height"])
             (d / "shot.json").write_text(json.dumps(shot, indent=1), encoding="utf-8")
         metric = _metric_scale(trk, d, dict(np.load(d / "tracks" / "tracks.npz")))
         up = true_up(trk, tel)
+        sun = sun_for_solve(trk, tel, recorded_utc(shot["source"]), up) if tel and Path(shot["source"]).is_file() else None
         ply = sel / "points.ply"
         X = read_ply_xyz(ply) if ply.exists() else None
         mpu, units = units_of(metric)
         world, how = blender_world(trk, ply if ply.exists() else None, metres_per_unit=mpu, up=up)
         for folder in [sel, *copies]:
             b = json.loads((folder / "blender.json").read_text())
-            b.update({"world": world, "world_how": how, "units": units, "median_depth": median_depth(trk, X)})
+            b.update({"world": world, "world_how": how, "units": units, "median_depth": median_depth(trk, X), "sun": sun})
             (folder / "blender.json").write_text(json.dumps(b))
             if (folder / "import_blender.py").exists():
                 (folder / "import_blender.py").write_text(BPY_TEMPLATE.replace("__DATA__", json.dumps(b)), encoding="utf-8")
         for sj in {d / "solve.json", *[c / "solve.json" for c in copies if (c / "solve.json").exists()]}:
             r = json.loads(sj.read_text())
             r["camera"] = shot.get("camera")
+            if sun:
+                r["sun"] = sun
             if metric:
                 r["metric_scale"] = metric
             if up is not None:
@@ -74,7 +81,8 @@ def main():
                                                          f" (models {metric.get('agree_pct')} % apart)")
         else:
             verdict = "size unknown"
-        print(f"{d.name}: camera {(shot.get('camera') or {}).get('name')}; {verdict}; level from {'the gimbal' if up is not None else how}; "
+        sun_txt = f"; sun {sun['azimuth_deg']:.0f} deg az, {sun['elevation_deg']:.1f} deg high (north from {sun['heading_from']})" if sun else ""
+        print(f"{d.name}: camera {(shot.get('camera') or {}).get('name')}{sun_txt}; {verdict}; level from {'the gimbal' if up is not None else how}; "
               f"patched {1 + len(copies)} folder(s)", flush=True)
 
 

@@ -6,7 +6,7 @@ import numpy as np
 
 from niko.camio import CameraTrack
 from niko.scale import telemetry_scale
-from niko.telemetry import CAM_TO_BODY, NED_TO_ENU, enu, flatten, true_up, updates
+from niko.telemetry import CAM_TO_BODY, NED_TO_ENU, enu, flatten, rdd18_distance, read_sony, true_up, updates
 
 
 def _varint(v):
@@ -108,3 +108,28 @@ def test_true_up_from_the_gimbal():
     up = true_up(trk, tel)
     assert up is not None and np.degrees(np.arccos(np.clip(up @ [0, 0, 1], -1, 1))) < 0.01
     assert len(updates(tel["lat"])) == 120  # 12 s of GPS at 10 Hz
+
+
+def test_rdd18_distance():
+    assert abs(rdd18_distance(0xC7D0) - 0.2) < 1e-12        # 2000e-4 m: a 200 mm focal length
+    assert abs(rdd18_distance(0x00A6) - 166.0) < 1e-9       # exponent 0
+    assert abs(rdd18_distance(0xE0A6) - 1.66) < 1e-12       # exponent -2: a 1.66 m focus distance
+
+
+def _box(kind: bytes, payload: bytes) -> bytes:
+    return struct.pack(">I4s", 8 + len(payload), kind) + payload
+
+
+def test_sony_camera_from_the_xml_inside_an_mp4(tmp_path):
+    xml = (b'<?xml version="1.0" encoding="UTF-8"?>\n<NonRealTimeMeta xmlns="urn:schemas-professionalDisc:'
+           b'nonRealTimeMeta:ver.2.00"><Device manufacturer="Sony" modelName="ILCE-7M3" serialNo="1"/>'
+           b'<AcquisitionRecord><Group name="CameraUnitMetadataSet"><Item name="CaptureGammaEquation" '
+           b'value="s-log3-cine"/></Group></AcquisitionRecord></NonRealTimeMeta>')
+    clip = tmp_path / "C0022.MP4"
+    clip.write_bytes(_box(b"ftyp", b"XAVC\0\0\0\0") + _box(b"mdat", bytes(64)) + _box(b"moov", bytes(16))
+                     + _box(b"meta", bytes(12) + xml))
+    tel = read_sony(clip)
+    assert tel["camera"] == "Sony ILCE-7M3" and tel["gamma"] == "s-log3-cine" and tel["focal_mm"] is None
+    other = tmp_path / "other.mp4"
+    other.write_bytes(_box(b"ftyp", b"isom\0\0\0\0") + _box(b"mdat", bytes(64)))
+    assert read_sony(other) is None

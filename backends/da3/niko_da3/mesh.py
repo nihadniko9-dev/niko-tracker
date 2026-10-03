@@ -25,6 +25,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import time
+
 import numpy as np
 
 
@@ -170,3 +172,56 @@ def _fill_holes(mesh, hole_size: float):
         _, idx = cKDTree(np.asarray(mesh.vertices)).query(np.asarray(filled.vertices), k=1, workers=-1)
         filled.vertex_colors = o3d.utility.Vector3dVector(np.asarray(mesh.vertex_colors)[idx])
     return filled
+
+
+
+def _manifold(mesh, rounds: int = 10):
+    """Remove what makes a mesh non-manifold (UVAtlas refuses it): duplicates, degenerate triangles,
+    non-manifold edges and vertices."""
+    for _ in range(rounds):
+        mesh.remove_duplicated_vertices()
+        mesh.remove_duplicated_triangles()
+        mesh.remove_degenerate_triangles()
+        mesh.remove_non_manifold_edges()
+        bad = np.asarray(mesh.get_non_manifold_vertices())
+        if len(bad):
+            mesh.remove_vertices_by_index(bad.tolist())
+        mesh.remove_unreferenced_vertices()
+        if mesh.is_edge_manifold() and mesh.is_vertex_manifold():
+            break
+    return mesh
+
+
+def texture(job: dict, res) -> None:
+    """mesh_textured.obj (+ .mtl, _albedo.png): the surface simplified to `tex_tris` triangles, unwrapped
+    (UVAtlas) and coloured by projecting `tex_views` of the stereo frames into one `tex_size` texture.
+    Real clip 03: 200k triangles + a 4096 texture show what the 1.8M-triangle coloured mesh shows."""
+    import open3d as o3d
+
+    out = Path(job["out_dir"])
+    opt = job.get("options", {})
+    t0 = time.time()
+    mesh = o3d.io.read_triangle_mesh(str(out / "mesh.ply"))
+    tris = int(opt.get("tex_tris", 300_000))
+    if len(mesh.triangles) > tris:
+        mesh = mesh.simplify_quadric_decimation(tris)
+    mesh = _manifold(mesh)
+    tm = o3d.t.geometry.TriangleMesh.from_legacy(mesh)
+    size = int(opt.get("tex_size", 4096))
+    tm.compute_uvatlas(size=size, gutter=2.0)
+    inp = np.load(out / "mesh_input.npz")
+    names = list(inp["names"])
+    k = min(int(opt.get("tex_views", 24)), len(names))
+    pick = np.unique(np.round(np.linspace(0, len(names) - 1, k)).astype(int))
+    imgs, Ks, Es = [], [], []
+    for i in pick:
+        imgs.append(o3d.t.io.read_image(str(out / "images" / str(names[i]))))
+        Ks.append(o3d.core.Tensor(np.asarray(inp["K"][i], np.float64)))
+        E = np.eye(4)
+        E[:3, :3], E[:3, 3] = inp["R"][i], inp["t"][i]
+        Es.append(o3d.core.Tensor(E))
+    tm.project_images_to_albedo(imgs, Ks, Es, size, True)
+    o3d.t.io.write_triangle_mesh(str(out / "mesh_textured.obj"), tm)
+    res.outputs.update({"mesh_textured": "mesh_textured.obj"})
+    res.stats.update({"triangles": int(len(mesh.triangles)), "vertices": int(len(mesh.vertices)),
+                      "views": int(len(pick)), "texture_size": size, "seconds": round(time.time() - t0, 1)})

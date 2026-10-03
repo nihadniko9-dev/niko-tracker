@@ -41,13 +41,13 @@ def main() -> None:
     job = read_job(sys.argv[1])
     opt = job.get("options", {})
     shot_dir, out_dir = Path(job["shot_dir"]), Path(job["out_dir"])
-    if job.get("task") == "mesh":  # surface from fused stereo points (Open3D lives in this env)
+    if job.get("task") in ("mesh", "texture"):  # surface / texture (Open3D lives in this env)
         import open3d
 
-        from .mesh import run
+        from .mesh import run, texture
 
         with ResultWriter(job, versions={"open3d": open3d.__version__}) as res:
-            run(job, res)
+            (texture if job["task"] == "texture" else run)(job, res)
         return
     with ResultWriter(job, versions={"da3_commit": repo_commit(), "checkpoint": CKPT_DIR.name}) as res:
         import torch

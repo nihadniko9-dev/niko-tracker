@@ -176,7 +176,10 @@ class Solve:
             messages.append(f"Only {done} of {total} frames solved: check the missing parts.")
         err = self.report.get("solve_error") or {}
         fraction = err.get("inlier_fraction")
-        if fraction is not None and fraction < 0.9:
+        if fraction is not None and fraction < UNRELIABLE_FRACTION:
+            messages.append(f"Not reliable: only {100 * fraction:.0f}% of the tracked points fit the camera. The footage "
+                            "is probably too blurred, too dark or mostly moving things; try a steadier or brighter part.")
+        elif fraction is not None and fraction < 0.9:
             messages.append("Many tracked observations disagree: inspect the lock-test video.")
         if self.average_px is None:
             messages.append("No measured tracking error: inspect the result before using it.")
@@ -234,10 +237,18 @@ def hd_scale(width) -> float:
     return max(1.0, (width or 1920) / 1920.0)
 
 
-def rating(px, width=1920):
-    """(label, icon, rgba) for an average error in the clip's own pixels."""
+# fewer held-out observations than this within 3 px: the average error (of those that fit) says little
+# (real iPhone 11 night clip, motion-blurred whip pan: 34.7 %, median 4.7 px)
+UNRELIABLE_FRACTION = 0.6
+
+
+def rating(px, width=1920, fraction=None):
+    """(label, icon, rgba) for an average error in the clip's own pixels and the share of observations
+    within 3 px."""
     if px is None:
         return "No result", "QUESTION", (0.7, 0.7, 0.7, 1.0)
+    if fraction is not None and fraction < UNRELIABLE_FRACTION:
+        return "Not reliable", "ERROR", (0.90, 0.30, 0.30, 1.0)
     v = px / hd_scale(width)
     if v < 0.5:
         return "Excellent", "CHECKMARK", (0.45, 0.80, 0.25, 1.0)

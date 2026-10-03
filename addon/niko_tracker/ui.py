@@ -166,7 +166,11 @@ class NIKO_PT_result(_Base, bpy.types.Panel):
         lay = self.layout
         avg = s.average_px
         advice = s.guidance()
-        label, icon = ("Needs review", "ERROR") if advice else ("Ready for visual check", "INFO")
+        frac = (s.report.get("solve_error") or {}).get("inlier_fraction")
+        if frac is not None and frac < solve_io.UNRELIABLE_FRACTION:
+            label, icon = "Not reliable", "CANCEL"
+        else:
+            label, icon = ("Needs review", "ERROR") if advice else ("Ready for visual check", "INFO")
         box = lay.box()
         row = box.row()
         row.scale_y = 1.6
@@ -200,7 +204,18 @@ class NIKO_PT_result(_Base, bpy.types.Panel):
                 col.label(text=f"Equally good fits: {lo:.0f} - {hi:.0f} mm")
             col.label(text="Use 2 Solve > Advanced > Known.")
         elif kl:
-            lay.label(text=f"Known lens: {kl['focal_mm']:g} mm ({kl['sensor_mm']:g} mm sensor)", icon="LOCKED")
+            # given: mm on a sensor; Sony metadata: mm and its 35 mm equivalent; maker's spec: the
+            # equivalent only; camera profile: pixels only
+            if kl.get("focal_mm") and kl.get("sensor_mm"):
+                text = f"Known lens: {kl['focal_mm']:g} mm ({kl['sensor_mm']:g} mm sensor)"
+            elif kl.get("focal_mm") and kl.get("focal_35mm"):
+                text = f"Known lens: {kl['focal_mm']:g} mm ({kl['focal_35mm']:.0f} equiv.)"
+            elif kl.get("focal_35mm"):
+                text = f"Known lens: {kl['focal_35mm']:g} mm equivalent"
+            else:
+                w, sw = s.blender.get("width"), s.blender.get("sensor_width")
+                text = f"Known lens: {kl['focal_px'] / w * sw:.1f} mm" if w and sw and kl.get("focal_px") else "Known lens"
+            lay.label(text=text, icon="LOCKED")
         gaps = s.report.get("track_gaps") or []
         if gaps:
             warn = lay.box()
@@ -232,8 +247,8 @@ class NIKO_PT_result(_Base, bpy.types.Panel):
         if made:
             _pair(col, "Shot with", made.replace("DJI DJI ", "DJI "))
         known = s.report.get("known_lens") or {}
-        if known.get("source") == "camera profile":
-            _pair(col, "Lens from", "camera profile")
+        if known.get("source") in ("camera profile", "camera metadata", "maker's lens spec"):
+            _pair(col, "Lens from", known["source"])
         if context.scene.niko.advanced:
             _pair(col, "Picked", s.selected)
         f, v = s.worst_frame()
@@ -317,6 +332,15 @@ class NIKO_PT_use(_Base, bpy.types.Panel):
         row = size.row(align=True)
         row.operator("niko.set_ground", icon="AXIS_TOP")
         row.operator("niko.reset_adjust", text="", icon="LOOP_BACK")
+        sun = s.blender.get("sun")
+        if sun:
+            row = size.row()
+            if sun["elevation_deg"] > 0:
+                row.operator("niko.add_sun", icon="LIGHT_SUN")
+                size.label(text=f"Sun {sun['azimuth_deg']:.0f}\u00b0, {sun['elevation_deg']:.0f}\u00b0 high, "
+                                f"{sun['utc'][11:16]} UTC")
+            else:
+                size.label(text="Night shot: the sun was below the horizon", icon="LIGHT_SUN")
         col = lay.column(align=True)
         col.scale_y = 1.3
         col.operator("niko.rebuild", icon="OUTLINER_OB_CAMERA")
@@ -324,7 +348,9 @@ class NIKO_PT_use(_Base, bpy.types.Panel):
         row.prop(context.scene.niko, "mesh_quality", text="")
         row.operator("niko.mesh", icon="MESH_ICOSPHERE")
         col.label(text="Scene mesh is optional.")
+        col.operator("niko.textured_mesh", icon="TEXTURE")
         col.operator("niko.sim_mesh", icon="PHYSICS")
+        col.operator("niko.shadow_catcher", icon="SHADING_SOLID")
         mesh = bpy.data.objects.get("Niko scene mesh")
         if mesh is not None:
             projected = mesh.modifiers.get("Niko projection") is not None
@@ -334,6 +360,9 @@ class NIKO_PT_use(_Base, bpy.types.Panel):
             row.operator("niko.project", text="", icon="COLOR").on = False
         col.operator("niko.locktest", icon="SEQUENCE")
         col.operator("niko.export_ae", icon="EXPORT")
+        row = col.row(align=True)
+        for key, label, _ in (("FBX", "FBX", ""), ("ABC", "Alembic", ""), ("USD", "USD", "")):
+            row.operator("niko.export_3d", text=label, icon="EXPORT").fmt = key
         col.operator("niko.open_folder", icon="FILE_FOLDER")
 
 

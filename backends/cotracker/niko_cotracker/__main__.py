@@ -108,7 +108,9 @@ def repo_commit() -> str:
 def default_model_size(pw, ph):
     k = np.sqrt(960 * 540 / (pw * ph))
     if k >= 1:
-        return [ph, pw]
+        # CoTracker3 needs both sides divisible by its stride (4): GoPro's 854x480 samples failed with
+        # an assertion. Sizes that already divide (960x540, 640x360) stay exactly as they were.
+        return [int(round(ph / 4) * 4), int(round(pw / 4) * 4)]
     return [int(round(ph * k / 8) * 8), int(round(pw * k / 8) * 8)]
 
 

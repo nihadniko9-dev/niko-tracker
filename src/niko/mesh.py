@@ -35,10 +35,14 @@ from .plyio import read_ply_xyz
 # (synthetic drone_orbit against its true geometry, scripts/dev/mesh_check.py: finer voxels trimmed
 # away thinly seen surface; detail comes from the frames and Poisson depth, 1500 cells keep coverage)
 QUALITY = {
-    "fast": {"images": 40, "size": 1280, "cells": 1200, "depth": 10, "smooth": 3},
-    "good": {"images": 60, "size": 1600, "cells": 1500, "depth": 11, "smooth": 5},
-    "high": {"images": 90, "size": 2400, "cells": 1500, "depth": 11, "smooth": 5},
+    "fast": {"images": 40, "size": 1280, "cells": 1200, "depth": 10, "smooth": 3,
+             "tex_tris": 150_000, "tex_views": 16, "tex_size": 2048},
+    "good": {"images": 60, "size": 1600, "cells": 1500, "depth": 11, "smooth": 5,
+             "tex_tris": 300_000, "tex_views": 24, "tex_size": 4096},
+    "high": {"images": 90, "size": 2400, "cells": 1500, "depth": 11, "smooth": 5,
+             "tex_tris": 500_000, "tex_views": 36, "tex_size": 4096},
 }
+TEXTURED = ("mesh_textured.obj", "mesh_textured.mtl", "mesh_textured_albedo.png")
 
 
 def build_mesh(solve_dir: str | Path, quality: str = "good", max_images: int | None = None,
@@ -58,7 +62,7 @@ def build_mesh(solve_dir: str | Path, quality: str = "good", max_images: int | N
         raise RuntimeError("the camera only rotates (tripod): every point is seen from one place, no 3D to mesh")
     if not (sel / "points.ply").exists():
         raise RuntimeError("the solve has no 3D points")
-    surface_opts = {"cells": q["cells"], "depth": q["depth"], "smooth": q["smooth"]}
+    surface_opts = {k: q[k] for k in ("cells", "depth", "smooth", "tex_tris", "tex_views", "tex_size")}
     work = solve_dir / "mesh"
     if reuse_stereo and (work / "dense" / "fused.ply").exists():
         return _surface(solve_dir, work, sel, surface_opts, log, t0)
@@ -99,6 +103,28 @@ def build_mesh(solve_dir: str | Path, quality: str = "good", max_images: int | N
     return out
 
 
+def texture(solve_dir: Path, work: Path, sel: Path, opts: dict, log) -> str | None:
+    """The textured copy (extra: a failure leaves the coloured mesh in place). Open3D's UVAtlas crashes on
+    some meshes at 300k triangles (real clip 04: segfault, also with partitions or slivers removed; fine
+    at 100k), so it is tried again with fewer triangles."""
+    tris = int(opts.get("tex_tris", 300_000))
+    last = ""
+    for attempt in range(3):
+        try:
+            tex = run_backend("da3", "texture", solve_dir, work, {**opts, "tex_tris": tris})["stats"]
+        except Exception as e:  # noqa: BLE001
+            last = f"{type(e).__name__}: {str(e)[:120]}"
+            tris = int(tris * 0.6)
+            continue
+        for name in TEXTURED:
+            shutil.copyfile(work / name, sel / name)
+        log(f"[mesh] textured copy: {tex['triangles']:,} triangles, a {tex['texture_size']} px texture from "
+            f"{tex['views']} frames ({tex['seconds']} s)")
+        return str(sel / TEXTURED[0])
+    log(f"[mesh] no textured copy ({last})")
+    return None
+
+
 def _surface(solve_dir: Path, work: Path, sel: Path, opts: dict, log, t0: float) -> dict:
     surf = run_backend("da3", "mesh", solve_dir, work, opts)
     st = surf["stats"]
@@ -113,5 +139,9 @@ def _surface(solve_dir: Path, work: Path, sel: Path, opts: dict, log, t0: float)
     out = {"mesh": str(sel / "mesh.ply"), "mesh_sim": str(sel / "mesh_sim.ply"),
            "dense_points": str(sel / "dense_points.ply"), "fused_points": st.get("fused_points"),
            "vertices": st["vertices"], "triangles": st["triangles"], "seconds": round(time.time() - t0, 1)}
+    tex = texture(solve_dir, work, sel, opts, log)
+    if tex:
+        out["textured"] = tex
+    out["seconds"] = round(time.time() - t0, 1)
     log(f"[mesh] -> {out['mesh']} in {out['seconds']} s")
     return out

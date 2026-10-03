@@ -148,6 +148,36 @@ def _reuse_refined(folder: Path, key: str, options: dict, focal_px=None) -> Came
     return trk if ok else None
 
 
+def _free_start(name: str, raw: CameraTrack, tracks: dict, out_dir: Path, log, sift: dict | None,
+                reuse: bool) -> CameraTrack | None:
+    """A second start for bundle adjustment with a known lens: the raw candidate refined with a free
+    focal first. A raw start whose focal is far from the known one can end in a worse optimum once the
+    lens is held: real FX6 200 mm clip, MegaSaM's raw camera set straight to 36,100 px: 74.5 % of
+    held-out SIFT within 3 px; from its free bundle adjustment first: 79.5 %; COLMAP's free bundle
+    adjustment held at 36,100 px: 88.1 %. None when it fails."""
+    from dataclasses import asdict
+
+    from ..refine import RefineOptions, refine
+
+    ropts = RefineOptions(intrinsics="shared_focal", distortion="none")
+    folder = out_dir / "candidates" / f"{name}+ba_free"
+    old = _reuse_refined(folder, "refine", asdict(ropts)) if reuse else None
+    if old is not None:
+        return old
+    try:
+        trk, _ = refine(raw, tracks, folder, ropts, sift=sift)
+        f = trk.K[trk.valid, 0, 0]
+        if not np.all(np.isfinite(f) & (f > 0)):
+            raise RuntimeError("focal diverged")
+        trk.extra["sift_split"] = SIFT_SPLIT
+        trk.save(folder / "cameras.json")
+        log(f"[refine] {name}+ba_free: {float(np.median(f)):.1f} px with a free focal, a second start")
+        return trk
+    except Exception as e:
+        log(f"[refine] {name}+ba_free failed: {type(e).__name__}: {str(e)[:200]}")
+        return None
+
+
 def refine_stage(cands: dict, tracks: dict, out_dir: Path, log, sift: dict | None = None,
                  sift_holdout: dict | None = None, top_k: int = 2, reuse: bool = False,
                  focal_px: float | None = None) -> dict:
@@ -170,15 +200,22 @@ def refine_stage(cands: dict, tracks: dict, out_dir: Path, log, sift: dict | Non
     # every good start converges to the same optimum (orbit_yard: all four candidates -> 0.013 deg),
     # so the three camera models run on the best candidate and plain BA on the runner-up
     modes = KNOWN_LENS_MODES if focal_px else BA_MODES
+    runs = []  # (candidate name, name prefix of the refined ones, start, rank)
     for rank, n in enumerate(usable[:top_k]):
-        start = cands[n]
-        if focal_px:
-            start = copy_track(start)
-            start.K[:, 0, 0] = start.K[:, 1, 1] = focal_px
+        if not focal_px:
+            runs.append((n, "", cands[n], rank))
+            continue
+        # a known lens: from the raw camera and from its free-focal refinement; auto-select keeps the better
+        for prefix, raw in (("", cands[n]), ("free+", _free_start(n, cands[n], tracks, out_dir, log, sift, reuse))):
+            if raw is not None:
+                start = copy_track(raw)
+                start.K[:, 0, 0] = start.K[:, 1, 1] = focal_px
+                runs.append((n, prefix, start, rank))
+    for n, prefix, start, rank in runs:
         for suffix, (intr, dist, cx) in modes.items():
             if rank > 0 and suffix not in ("ba", "ba_lens"):
                 continue
-            name = f"{n}+{suffix}"
+            name = f"{n}+{prefix}{suffix}"
             ropts = RefineOptions(intrinsics=intr, distortion=dist)
             old = _reuse_refined(out_dir / "candidates" / name, "refine", asdict(ropts), focal_px) if reuse else None
             if old is not None:
@@ -278,6 +315,27 @@ def lens_spread(cands: dict, scores: dict, best: str) -> dict | None:
             "spread_pct": round(100 * (hi / lo - 1), 2)}
 
 
+def _raw_turn(cands: dict) -> float:
+    """The largest turn (deg from the first frame) of the raw candidate that registered most frames."""
+    usable = [c for c in cands.values() if c.valid.sum() >= 2]
+    if not usable:
+        return 0.0
+    trk = max(usable, key=lambda c: int(c.valid.sum()))
+    v = np.nonzero(trk.valid)[0]
+    R0 = trk.R_c2w[v[0]]
+    return max(float(np.degrees(np.arccos(np.clip((np.trace(R0.T @ trk.R_c2w[i]) - 1) / 2, -1, 1)))) for i in v)
+
+
+def tracker_size(pw: int, ph: int, max_area: float = 960 * 540) -> list[int]:
+    """[h, w] CoTracker3 runs at: the proxy up to max_area pixels, aspect kept. Both sides divisible by
+    4, as the model needs (GoPro's 854x480 samples failed its assertion); sizes that already divide
+    (960x540, 640x360) stay as they are; larger proxies are scaled with sides multiples of 8."""
+    k = float(np.sqrt(max_area / (pw * ph)))
+    if k >= 1:
+        return [int(round(ph / 4) * 4), int(round(pw / 4) * 4)]
+    return [int(round(ph * k / 8) * 8), int(round(pw * k / 8) * 8)]
+
+
 def lens_check(cands: dict, best: str, scores: dict | None = None) -> dict | None:
     """Flag a solve whose lens the footage did not measure: the learned depth models disagree with
     its focal by more than a factor e^LENS_WARNING_LOG_RATIO (pure forward motion), or candidates
@@ -314,8 +372,9 @@ def lens_check(cands: dict, best: str, scores: dict | None = None) -> dict | Non
 def solve(clip: str | Path, out_dir: str | Path, methods=DEFAULT_METHODS, prompts=None,
           fps: float | None = None, frame_start: int = 1, track_size=None, log=print, refine: bool = True,
           reuse: bool = False, focal_mm: float | None = None, sensor_mm: float = 36.0,
-          stride: int | None = None) -> dict:
+          stride: int | None = None, ignore_rotation: bool = False) -> dict:
     """focal_mm: a known lens, with sensor_mm its sensor width (36 = full frame / 35 mm equivalent).
+    ignore_rotation: use the picture as stored, not turned by the file's rotation flag (a wrong flag).
     stride: keyframe step for COLMAP / MegaSaM (None: candidates.keyframe_stride)."""
     clip, out_dir = Path(clip).resolve(), Path(out_dir).resolve()
     from .cache import check_reuse, signature
@@ -364,7 +423,8 @@ def solve(clip: str | Path, out_dir: str | Path, methods=DEFAULT_METHODS, prompt
         report["stages"]["ingest"] = {"ok": True, "seconds": 0.0, "reused": True}
     else:
         shot = stage("ingest", lambda: ingest(src, out_dir, fps=(spec or {}).get("fps", fps),
-                                              frame_start=(spec or {}).get("frame_start", frame_start)))
+                                              frame_start=(spec or {}).get("frame_start", frame_start),
+                                              ignore_rotation=ignore_rotation))
     if shot is None:
         return _finish(report, out_dir, t_all)
     log(f"[ingest] {shot['n_frames']} frames {shot['width']}x{shot['height']} @ {shot['fps']:g} fps")
@@ -384,10 +444,9 @@ def solve(clip: str | Path, out_dir: str | Path, methods=DEFAULT_METHODS, prompt
             f"of pixels, objects {m['stats']['objects_per_prompt']}")
 
     # CoTracker3 at up to 960x540 pixels (0.67 px median vs 1.0 px at its default 512x384 on the
-    # smoke shot); larger proxies are tracked at that area, aspect kept, sides multiples of 8.
+    # smoke shot); larger proxies are tracked at that area, aspect kept (tracker_size).
     pw, ph = shot["proxy"]["width"], shot["proxy"]["height"]
-    k = float(np.sqrt(float(hw.get("cotracker_max_area", 960 * 540)) / (pw * ph)))
-    size = track_size or ([ph, pw] if k >= 1 else [int(round(ph * k / 8) * 8), int(round(pw * k / 8) * 8)])
+    size = track_size or tracker_size(pw, ph, float(hw.get("cotracker_max_area", 960 * 540)))
     topt = {"query_every": 10, **({"model_size": size} if size else {})}
     t = reused(out_dir / "tracks/result.json")
     if t is not None and t.get("stats", {}).get("query_mode") != "model":
@@ -444,9 +503,30 @@ def solve(clip: str | Path, out_dir: str | Path, methods=DEFAULT_METHODS, prompt
                                     "source": "given"}
             log(f"[refine] known lens {focal_mm:g} mm on a {sensor_mm:g} mm sensor = {focal_px:.1f} px")
         else:
-            from ..camera import profile_for
+            from ..camera import maker_focal_px, metadata_focal_px, profile_for
             prof = profile_for(shot.get("camera"))
-            if prof and prof.get("width") == shot["width"]:
+            md = metadata_focal_px(shot)
+            if md and not (prof and prof.get("width") == shot["width"]):
+                # the lens the camera recorded (Sony), with its focus distance: real FX6 clips, 24 mm measured
+                # by the footage within 1 % of it; 200 mm the footage alone could not measure
+                focal_px = float(md["focal_px"])
+                report["known_lens"] = {"focal_px": focal_px, "source": "camera metadata", "lens": md.get("lens"),
+                                        "focal_mm": md.get("focal_mm"), "focal_35mm": md.get("focal_35mm"),
+                                        "focus_m": md.get("focus_m"), "focus_factor": md.get("focus_factor")}
+                focus = f", focused at {md['focus_m']:g} m (x{md['focus_factor']:.3f})" if md.get("focus_m") else ""
+                log(f"[refine] known lens from the camera's metadata: {md.get('lens') or ''} "
+                    f"{md.get('focal_mm') or md['focal_35mm']:g} mm{focus} = {focal_px:.1f} px")
+            elif not prof and maker_focal_px(shot) and _raw_turn(cands) < MIN_TURN_DEG:
+                # the footage will not measure the lens (pure translation): the maker's spec instead
+                mk = maker_focal_px(shot)
+                focal_px = float(mk["focal_px"])
+                report["known_lens"] = {"focal_px": focal_px, "source": "maker's lens spec",
+                                        "camera": mk["name"], "uncertainty_pct": mk["uncertainty_pct"],
+                                        "focal_35mm": mk["focal_35mm"], "raw_turn_deg": round(_raw_turn(cands), 3)}
+                log(f"[refine] the camera hardly turns ({_raw_turn(cands):.2f} deg), so the footage cannot measure "
+                    f"its lens: the {mk['name']} spec, {mk['focal_35mm']:g} mm equivalent = {focal_px:.1f} px "
+                    f"(+-{mk['uncertainty_pct']:g} %)")
+            elif prof and prof.get("width") == shot["width"]:
                 focal_px = float(prof["focal_px"])
                 report["known_lens"] = {"focal_px": focal_px, "source": "camera profile",
                                         "camera": shot["camera"]["name"], "uncertainty_pct": prof["uncertainty_pct"],
@@ -477,6 +557,12 @@ def solve(clip: str | Path, out_dir: str | Path, methods=DEFAULT_METHODS, prompt
     report["camera"] = shot.get("camera")
     if best and not report.get("known_lens"):
         lc = lens_check(cands, best, sel["scores"])
+        from ..camera import metadata_focal_px
+        md = metadata_focal_px(shot)
+        if md:  # what the camera says about its lens, next to what the footage measured
+            report["metadata_lens"] = md
+            if lc:
+                lc["metadata_focal_px"] = round(md["focal_px"], 1)
         if lc:
             report["lens_check"] = lc
             if lc["uncertain"]:
@@ -505,7 +591,10 @@ def solve(clip: str | Path, out_dir: str | Path, methods=DEFAULT_METHODS, prompt
         if metric:
             report["metric_scale"] = metric
             agree = metric.get("agree_pct")
-            apart = f"the two depth models {agree:.0f} % apart" if agree is not None else "one depth model only"
+            # one model near zero makes the gap meaningless as a number (real iPhone 14 night clip: 1.6e14 %)
+            apart = ("one depth model only" if agree is None else
+                     "the two depth models more than 1000 % apart" if agree > 1000 else
+                     f"the two depth models {agree:.0f} % apart")
             if metric.get("source") in ("gps", "altitude"):
                 t = metric["telemetry"][metric["source"]]
                 what = (f"GPS: {t['fixes']} fixes over {t['extent_m']:.0f} m" if metric["source"] == "gps"
@@ -518,14 +607,22 @@ def solve(clip: str | Path, out_dir: str | Path, methods=DEFAULT_METHODS, prompt
             else:
                 log(f"[scale] real size unknown ({apart}): set it in Blender from a known distance or the camera height")
         use = metric if metric and metric.get("reliable") else None
-        from ..telemetry import for_solve, true_up
-        up = true_up(trk, for_solve(out_dir))
+        from ..sun import sun_for_solve
+        from .ingest import frames_as_footage
+        from ..telemetry import for_solve, recorded_utc, true_up
+        tel = for_solve(out_dir)
+        up = true_up(trk, tel)
         if up is not None:
             report["true_up"] = {"source": "gimbal", "up": [float(x) for x in up]}
             log("[export] level from the drone's gimbal (true gravity)")
+        sun = sun_for_solve(trk, tel, recorded_utc(shot["source"]), up) if tel else None
+        if sun:
+            report["sun"] = sun
+            log(f"[export] the sun: azimuth {sun['azimuth_deg']:.1f} deg, {sun['elevation_deg']:.1f} deg high at "
+                f"{sun['utc']} (north from the {sun['heading_from']})")
         stage("export", lambda: export_solve(trk, out_dir / "candidates" / best / "points.ply", out_dir / "selected",
                                              out_dir / "frames", f"000000.{shot['frame_format']}", metric=use,
-                                             up=up))
+                                             up=up, sun=sun, footage_frames=frames_as_footage(shot)))
         from ..export_ae import export_after_effects
         stage("export_ae", lambda: export_after_effects(out_dir, log=log))
         fe = stage("frame_errors", lambda: frame_errors(trk, tracks, sift_holdout))

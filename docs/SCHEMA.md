@@ -132,11 +132,20 @@ solve.json                    every stage, every candidate's score, selection, s
                  // lenses more than 10 % apart = "equally_good_fits"
                  "spread": {"equally_good": {"colmap_global+ba": 1492.6, "colmap_global": 1495.1},
                             "focal_px": [1492.6, 1495.1], "spread_pct": 0.17}},
-  // a known lens: --focal-mm ("source": "given") or the camera's profile ("source": "camera profile",
-  // with "camera", "uncertainty_pct", "calibrated"); lens_check is not run then
+  // a known lens: --focal-mm ("source": "given"), the lens the camera recorded ("source": "camera
+  // metadata": Sony's 35 mm equivalent, constant through the clip, x diagonal px / 43.27, x the focus
+  // factor for the median focus distance, "focus_m" / "focus_factor": thin lens, v / f) or the
+  // camera's profile ("source": "camera profile", with "uncertainty_pct", "calibrated") or, when the raw
+  // camera turns less than 1 deg, the maker's spec ("source": "maker's lens spec": DJI FC9113 / FC9313,
+  // 24 mm equivalent, +-10 %); no lens_check then
   "known_lens": {"focal_mm": 28, "sensor_mm": 36, "focal_px": 1493.3, "source": "given"},
   "camera": {"id": "DJI FC9113", "name": "DJI Air3s (DJI FC9113)", "key": "...", "source": "telemetry"},
   "true_up": {"source": "gimbal", "up": [0.01, -0.99, 0.12]},  // up in the solve's world, when known
+  // the sun at the recording (GPS place, container creation_time in UTC, north from the GPS track
+  // or the gimbal's compass); "direction" points towards the sun in the solve's world
+  "sun": {"direction": [0.1, -0.2, 0.97], "azimuth_deg": 288.9, "elevation_deg": 1.8,
+          "utc": "2026-08-09T15:56:01+00:00", "north": [0.3, 0.1, 0.9], "heading_from": "gps",
+          "lat": 37.14, "lon": 42.69},
   // breaks in tracking: fewer than 50 SIFT tracks tie the frames before to the frames after
   // (clip frame numbers); [] = none found, absent = too few SIFT tracks to tell
   "track_gaps": [{"from_frame": 72, "to_frame": 80, "tracks": 0}],
@@ -173,7 +182,9 @@ that parents camera and points (with the drone's gimbal, up is true gravity: `tr
 says what one Blender unit is: `{"kind": "metres_gps" | "metres_altitude", "metres_per_unit",
 "uncertainty_pct"}` from the drone's telemetry, `{"kind": "metres_estimated", "metres_per_unit",
 "agree_pct"}` when the metric depth models agree (then 1 unit is about 1 m), else `{"kind":
-"arbitrary"}` (median depth 10 units). `median_depth` is the median camera-to-point depth
+"arbitrary"}` (median depth 10 units). `footage_frames`: true when Blender and After Effects show the engine's frames instead of the video
+(variable frame rate, an upright phone video, interlaced). `sun`: as in solve.json (the add-on's "Add the real sun"
+parents its lamp to the world empty, so the direction stays right after Set real size / Set ground). `median_depth` is the median camera-to-point depth
 in the solve's units (times the world's scale for Blender units).
 
 ### `real_scale.json` (add-on, optional)
@@ -186,12 +197,18 @@ cumulative) and `how`; `ground` (e.g. "4 points, 0.3% off flat"). Files from 0.4
 
 ### `telemetry.npz`
 
-DJI drones' per-frame telemetry ("DJI meta" stream, niko.telemetry.read_dji), one row per video
-frame, NaN where a value is missing: `lat`, `lon` (degrees), `alt` (GPS altitude, m), `rel_alt` (above
-take-off, m), `drone_pitch/roll/yaw`, `gimbal_pitch/roll/yaw` (degrees), `gimbal_q` [T,4] (w, x, y, z:
-camera body to NED), `zoom`; `info`: JSON with `proto`, `model`, `camera`, `width`, `height`, `fps`,
-`sensor_mm` (the video mode's sensor area). GPS arrives at 10 Hz and altitude at about 5 Hz, held
-between readings.
+Per-frame telemetry recorded in the clip (niko.telemetry.read_telemetry), one row per video frame,
+NaN where a value is missing, held between readings:
+- DJI drones and gimbals ("DJI meta" stream, `source` dji_djmd): `lat`, `lon` (degrees), `alt` (GPS,
+  m), `rel_alt` (above take-off, m), `drone_pitch/roll/yaw`, `gimbal_pitch/roll/yaw` (degrees),
+  `gimbal_q` [T,4] (w, x, y, z: camera body to NED), `zoom`; GPS at 10 Hz, altitude about 5 Hz.
+- GoPro ("GoPro MET" GPMF stream, `gopro_gpmf`): `lat`, `lon`, `alt` from GPS5 / GPS9 (only 3D fixes
+  with a dilution of precision <= 5), `gravity_cam` [T,3] (GRAV, when the camera writes it); `info`
+  adds `lens_mode` (W / L / S / N / H), `fov_deg` (ZFOV), `stabilised`, `firmware`.
+- Sony (XML sidecar, or the same XML inside an XAVC S MP4; MXF RDD 18 metadata, `sony`): `focal_mm`,
+  `focal_35mm`, `focus_m` per frame (MXF; shot.json keeps `focus_m` as [min, median, max]);
+  `info` adds `lens_model`, `gamma` (e.g. s-log3-cine) and `sensor_mm` (the imager's effective size).
+`info` (JSON) always has `source`, `model`, `camera`, `width`, `height`, `fps`, `sensor_mm`.
 
 ### `$NIKO_HOME/camera_profiles.json`
 
@@ -203,8 +220,19 @@ keyed by camera and video mode (`camera.key`): `{"name", "focal_px", "width", "u
 
 `selected/mesh.ply` (coloured surface, holes up to ~10 voxels filled), `selected/mesh_sim.ply`
 (about 150k triangles, no non-manifold edges, bigger holes filled: for collisions and simulation),
-`selected/dense_points.ply` (the fused stereo points), all in the solve's world like `points.ply`.
+`selected/dense_points.ply` (the fused stereo points), `selected/mesh_textured.obj` + `.mtl` +
+`_albedo.png` (the surface simplified to 150k / 300k / 500k triangles for fast / good / high, unwrapped
+with UVAtlas and textured from 16 / 24 / 36 of the stereo frames in a 2048 / 4096 px image), all in the
+solve's world like `points.ply` (the OBJ too: import it without an axis change).
 Stereo points on moving things (the solve's masks) and far away are removed before the surface.
+
+### Inputs
+
+Videos ffmpeg decodes (H.264 / H.265 8 and 10 bit, ProRes, XAVC / MXF, HDR HLG and PQ, phone videos
+held upright: the rotation flag is applied and the solve is portrait) and image folders (.jpg .png
+.tif .tiff incl. 16 bit, .exr incl. float with the sRGB curve, .dpx, .bmp; `--fps`). Camera RAW (.braw,
+.r3d, .ari / .arx, .crm) stops at ingest with the way out: export from DaVinci Resolve as ProRes 422
+HQ or an EXR / TIFF sequence.
 
 ### `shot.json`
 
@@ -217,6 +245,10 @@ Stereo points on moving things (the solve's masks) and far away are removed befo
   "proxy": {"width": 1920, "height": 1080, "scale_x": 0.5, "scale_y": 0.5},  // proxy px = full px * scale
   "lens": {"focal_mm": null, "focal_35mm": null, "sensor_width_mm": null, "source": "ffprobe|exif|none"},
   "codec": "h264", "pix_fmt": "yuv420p", "rotation": 0,
+  // fps is measured from the frame spacing and set to the nearest standard rate (the container's own
+  // numbers can be wrong: 1080i MXF says 12.5 for 25); a variable-rate clip (phones in low light) keeps
+  // every recorded frame, one frame each, at its nominal rate; interlaced video is deinterlaced (yadif)
+  "vfr": false, "fps_average": 23.976, "interlaced": false,
   // the drone telemetry's summary (null without): source, proto, model, camera, sensor_mm, gps, altitude, gimbal, zoom
   "telemetry": {"source": "dji_djmd", "model": "DJI Air3s", "camera": "DJI FC9113", "sensor_mm": [13.107, 7.372],
                 "gps": true, "altitude": true, "gimbal": true, "zoom": [1.0, 1.0], "...": 0},

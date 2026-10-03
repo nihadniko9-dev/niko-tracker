@@ -49,8 +49,11 @@ def draw_hud():
     x, y = 18 * ui, strip + 40 * ui  # bottom left, above the error strip (Blender's text sits top left)
     avg = s.average_px
     k = solve_io.hd_scale(s.blender.get("width"))
-    label, _, rgba = solve_io.rating(avg, s.blender.get("width"))
-    if s.guidance():
+    label, _, rgba = solve_io.rating(avg, s.blender.get("width"),
+                                     (s.report.get("solve_error") or {}).get("inlier_fraction"))
+    if label == "Not reliable":
+        pass
+    elif s.guidance():
         label, rgba = "Needs review", (1.0, 0.65, 0.2, 1.0)
     else:
         label = "Check for sliding"

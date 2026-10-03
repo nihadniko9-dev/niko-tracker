@@ -98,7 +98,11 @@ def test_small_error_does_not_hide_lens_or_tracking_warnings():
     advice = s.guidance()
     assert any("Lens uncertain" in x for x in advice)
     assert any("Tracking broke" in x for x in advice)
-    assert any("Many tracked" in x for x in advice)
+    assert any("Not reliable" in x for x in advice)  # under 60 % within 3 px (real iPhone 11 night blur: 35 %)
+    assert mod.rating(0.1, 1920, 0.5)[0] == "Not reliable"
+    s.report["solve_error"]["inlier_fraction"] = 0.75
+    assert any("Many tracked" in x for x in s.guidance())
+    assert mod.rating(0.1, 1920, 0.75)[0] == "Excellent"
 
 
 def test_legacy_relative_clip_uses_ingest_source(tmp_path):

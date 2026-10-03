@@ -150,7 +150,8 @@ def units_of(metric: dict | None) -> tuple[float | None, dict]:
 
 
 def export_solve(trk: CameraTrack, points_src: Path | None, out_dir: Path, frames_dir: Path,
-                 first_frame_file: str, metric: dict | None = None, up: np.ndarray | None = None) -> dict:
+                 first_frame_file: str, metric: dict | None = None, up: np.ndarray | None = None,
+                 sun: dict | None = None, footage_frames: bool = False) -> dict:
     """metric: the solve's metres per unit (telemetry or depth models); the Blender scene is then in
     metres. up: true up in the solve's world (the drone's gimbal), for the levelling."""
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -175,7 +176,8 @@ def export_solve(trk: CameraTrack, points_src: Path | None, out_dir: Path, frame
             "frame_start": trk.frame_start, "sensor_width": 36.0, **aspect, "frames": frames,
             "frames_dir": str(frames_dir), "first_frame_file": first_frame_file,
             "points": "points.ply" if trk.points else None, "note": note,
-            "world": world, "world_how": world_how, "units": units, "median_depth": depth}
+            "world": world, "world_how": world_how, "units": units, "median_depth": depth,
+            "sun": sun, "footage_frames": bool(footage_frames)}
     script = BPY_TEMPLATE.replace("__DATA__", json.dumps(data))
     (out_dir / "import_blender.py").write_text(script, encoding="utf-8")
     (out_dir / "blender.json").write_text(json.dumps(data), encoding="utf-8")  # read by the Blender add-on

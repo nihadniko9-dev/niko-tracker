@@ -91,13 +91,68 @@ def _solve(args) -> int:
     prompts = _prompts(args.prompts)
     try:
         report = solve(clip, out, methods=methods, prompts=prompts, fps=args.fps, frame_start=args.frame_start,
-                       reuse=args.reuse, focal_mm=args.focal_mm, sensor_mm=args.sensor_mm, stride=args.stride)
+                       reuse=args.reuse, focal_mm=args.focal_mm, sensor_mm=args.sensor_mm, stride=args.stride,
+                       ignore_rotation=args.ignore_rotation)
     except (ValueError, OSError) as exc:
         print(f"Cannot start solve: {exc}", file=sys.stderr)
         return 1
     print(f"{'OK' if report['ok'] else 'INCOMPLETE'}: selected {report.get('selected')} "
           f"in {report['total_seconds']}s -> {out / 'solve.json'}")
     return 0 if report["ok"] else 1
+
+
+VIDEO_EXTS = {".mp4", ".mov", ".mxf", ".mts", ".m2ts", ".avi", ".mkv", ".m4v"}
+
+
+def batch_clips(paths: list[str]) -> list:
+    """The videos to solve: files as given, and the videos inside given folders (not recursive), sorted."""
+    from pathlib import Path
+
+    out = []
+    for a in paths:
+        p = Path(a)
+        if p.is_dir():
+            out += sorted(q for q in p.iterdir() if q.is_file() and q.suffix.lower() in VIDEO_EXTS)
+        elif p.is_file():
+            out.append(p)
+    return out
+
+
+def _batch(args) -> int:
+    """Solve many clips one after another; a finished solve is skipped, a failure does not stop the rest."""
+    import json
+    from pathlib import Path
+
+    from .pipeline.solve import DEFAULT_METHODS, solve
+
+    clips = batch_clips(args.paths)
+    if not clips:
+        print("No videos found.", file=sys.stderr)
+        return 1
+    root = Path(args.out) if args.out else None
+    results = []
+    for i, clip in enumerate(clips, 1):
+        out = (root / f"{clip.stem}_niko") if root else clip.with_suffix("").parent / f"{clip.stem}_niko"
+        done = out / "solve.json"
+        if done.exists() and json.loads(done.read_text()).get("ok"):
+            print(f"[batch] {i}/{len(clips)} {clip.name}: already solved, skipped")
+            results.append((clip.name, "skipped"))
+            continue
+        if args.dry_run:
+            print(f"[batch] {i}/{len(clips)} {clip.name} -> {out}")
+            results.append((clip.name, "to do"))
+            continue
+        print(f"[batch] {i}/{len(clips)} {clip.name} -> {out}", flush=True)
+        try:
+            rep = solve(clip, out, methods=DEFAULT_METHODS, prompts=_prompts(args.prompts))
+            err = (rep.get("solve_error") or {}).get("average_px")
+            results.append((clip.name, f"ok, {err:.3f} px" if rep.get("ok") and err is not None else "incomplete"))
+        except Exception as exc:  # noqa: BLE001 - one bad clip must not stop the batch
+            results.append((clip.name, f"failed: {type(exc).__name__}: {str(exc)[:120]}"))
+    print("[batch] summary:")
+    for name, r in results:
+        print(f"  {name}: {r}")
+    return 0 if all(not r.startswith("failed") and r != "incomplete" for _, r in results) else 1
 
 
 def _locktest(args) -> int:
@@ -219,6 +274,8 @@ def main(argv: list[str] | None = None) -> int:
                    help="sensor width in mm for --focal-mm (default 36: full frame / 35 mm equivalent)")
     p.add_argument("--reuse", action="store_true", help="keep finished stages found in the output folder")
     p.add_argument("--stride", type=int, help="keyframe step for COLMAP / MegaSaM (default: automatic)")
+    p.add_argument("--ignore-rotation", action="store_true",
+                   help="use the picture as stored, ignoring the file's rotation flag (when the flag is wrong)")
     p.set_defaults(func=_solve)
 
     p = sub.add_parser("locktest", help="MP4 of the footage with the solve's 3D points and a ground grid")
@@ -233,6 +290,13 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("-o", "--out", help="jsx path (default: <solve_dir>/selected/niko_after_effects.jsx)")
     p.add_argument("--nulls", type=int, default=24, help="number of 3D track nulls")
     p.set_defaults(func=_export_ae)
+
+    p = sub.add_parser("batch", help="solve many clips one after another (folders and / or files)")
+    p.add_argument("paths", nargs="+", help="video files and / or folders of videos")
+    p.add_argument("-o", "--out", help="folder for the results (default: <clip>_niko next to each clip)")
+    p.add_argument("--prompts", help='what to ignore, as for solve ("none": nothing)')
+    p.add_argument("--dry-run", action="store_true", help="only list what would be solved")
+    p.set_defaults(func=_batch)
 
     p = sub.add_parser("calibrate", help="measure the camera's lens from a solved calibration clip (the camera "
                                          "turns, e.g. a slow full circle) and use it for every later clip")

@@ -1,6 +1,7 @@
 """Operators: solve (engine job with live progress), load a solve, build the scene, workspace, exports."""
 
 import datetime
+import math
 import os
 import re
 import time
@@ -186,6 +187,11 @@ def _footage(context, cam_data, d):
     bg = cam_data.background_images.new()
     bg.alpha = 1.0
     bg.display_depth = "BACK"
+    # variable frame rate, upright phone video, interlaced: the engine's frames, not the video (Blender
+    # would read such a video differently from the solve's frames)
+    frames_first = os.path.normpath(os.path.join(context.scene.niko.solve_dir, "frames", d["first_frame_file"]))
+    if d.get("footage_frames") and os.path.exists(frames_first):
+        clip_path = ""
     if clip_path and os.path.exists(clip_path) and os.path.splitext(clip_path)[1].lower() not in IMAGE_EXT:
         clip = bpy.data.movieclips.load(clip_path, check_existing=True)
         clip.frame_start = d["frame_start"]
@@ -698,6 +704,64 @@ class NIKO_OT_export_ae(_EngineTask):
             os.startfile(os.path.dirname(jsx))  # noqa: S606 - shows the file in Explorer
 
 
+EXPORT_FORMATS = [("FBX", "FBX", "Cinema 4D, Unreal, Maya, 3ds Max (camera with a key on every frame)"),
+                  ("ABC", "Alembic", "Houdini, Nuke, Maya, Cinema 4D"),
+                  ("USD", "USD", "Houdini Solaris, Omniverse, Unreal, Maya")]
+
+
+class NIKO_OT_export_3d(bpy.types.Operator):
+    bl_idname = "niko.export_3d"
+    bl_label = "Export camera"
+    bl_description = ("Write the camera (a key on every frame, the lens, the levelled world and real size you set) "
+                      "and the track points for another 3D program, next to the solve. Frame 1 of the footage is "
+                      "frame 1 there too (time = frame / fps): start the footage at frame 1")
+    bl_options = {"REGISTER"}
+
+    fmt: bpy.props.EnumProperty(name="Format", items=EXPORT_FORMATS, default="FBX")
+
+    def execute(self, context):
+        n = context.scene.niko
+        s = solve_io.get(n.solve_dir)
+        cam = bpy.data.objects.get("Niko camera")
+        if s is None or cam is None:
+            self.report({"ERROR"}, "Load a solve first")
+            return {"CANCELLED"}
+        names = ["Niko world", "Niko camera", "Niko points", SUN_NAME, CATCHER_NAME]
+        obs = [bpy.data.objects[nm] for nm in names if nm in bpy.data.objects]
+        prev_sel, prev_act = list(context.selected_objects), context.view_layer.objects.active
+        for o in context.view_layer.objects:
+            o.select_set(False)
+        for o in obs:
+            o.select_set(True)
+        context.view_layer.objects.active = cam
+        out = os.path.join(solve_io.selected_dir(n.solve_dir),
+                           "niko_camera." + {"FBX": "fbx", "ABC": "abc", "USD": "usdc"}[self.fmt])
+        sc = context.scene
+        try:
+            if self.fmt == "FBX":
+                # the scene's animation baked into one take: with the default "one take per NLA strip"
+                # and no strips, Blender 5.2 wrote no animation at all (round-trip check)
+                bpy.ops.export_scene.fbx(filepath=out, use_selection=True, bake_anim=True,
+                                         bake_anim_use_all_actions=False, bake_anim_use_nla_strips=False,
+                                         bake_anim_force_startend_keying=True, bake_anim_step=1.0,
+                                         bake_anim_simplify_factor=0.0, object_types={"CAMERA", "EMPTY", "MESH", "LIGHT"},
+                                         add_leaf_bones=False, axis_forward="-Z", axis_up="Y")
+            elif self.fmt == "ABC":
+                bpy.ops.wm.alembic_export(filepath=out, selected=True, start=sc.frame_start, end=sc.frame_end)
+            else:
+                bpy.ops.wm.usd_export(filepath=out, selected_objects_only=True, export_animation=True)
+        except Exception as e:  # noqa: BLE001 - a failed exporter must not leave the selection changed
+            self.report({"ERROR"}, f"{self.fmt} export failed: {e}")
+            return {"CANCELLED"}
+        finally:
+            for o in context.view_layer.objects:
+                o.select_set(o in prev_sel)
+            context.view_layer.objects.active = prev_act
+        n.status = f"Camera exported: {os.path.basename(out)} (next to the solve)"
+        self.report({"INFO"}, n.status)
+        return {"FINISHED"}
+
+
 def selected_points(context):
     """(object, [world positions]) of the selected vertices of the active mesh (Edit or Object Mode)."""
     import bmesh
@@ -852,6 +916,91 @@ class NIKO_OT_set_ground(bpy.types.Operator):
         n.status = f"Ground set from {len(pts)} points ({off:.1f}% off a flat plane)"
         if off > 5.0:
             n.status += ": they are not on one flat floor, check them"
+        self.report({"INFO"}, n.status)
+        _redraw(context)
+        return {"FINISHED"}
+
+
+SUN_NAME = "Niko sun"
+
+
+class NIKO_OT_add_sun(bpy.types.Operator):
+    bl_idname = "niko.add_sun"
+    bl_label = "Add the real sun"
+    bl_description = ("A sun lamp where the sun really was: from the drone's GPS position and the recording time, "
+                      "turned with the scene (north from the GPS track or the compass). 3D objects then cast "
+                      "shadows the same way as the footage")
+    bl_options = {"REGISTER", "UNDO"}
+
+    def execute(self, context):
+        n = context.scene.niko
+        world = bpy.data.objects.get("Niko world")
+        s = solve_io.get(n.solve_dir)
+        sun = (s.blender.get("sun") if s else None) or {}
+        if world is None or not sun:
+            self.report({"ERROR"}, "No sun for this solve (it needs a drone clip with GPS and its recording time)")
+            return {"CANCELLED"}
+        if sun["elevation_deg"] <= 0:
+            n.status = f"The sun was below the horizon ({sun['elevation_deg']:.0f} deg): a night shot"
+            self.report({"WARNING"}, n.status)
+            return {"CANCELLED"}
+        ob = bpy.data.objects.get(SUN_NAME)
+        if ob is None:
+            light = bpy.data.lights.new(SUN_NAME, "SUN")
+            light.energy = 4.0
+            light.angle = math.radians(0.53)  # the sun's disc
+            ob = bpy.data.objects.new(SUN_NAME, light)
+            coll = bpy.data.collections.get(COLLECTION) or context.scene.collection
+            coll.objects.link(ob)
+        ob.parent = world
+        ob.matrix_parent_inverse = Matrix.Identity(4)
+        d = Vector(sun["direction"]).normalized()  # towards the sun, in the solve's world
+        ob.rotation_mode = "QUATERNION"
+        ob.rotation_quaternion = Vector((0, 0, 1)).rotation_difference(d)  # a sun lamp shines along its -Z
+        ob.location = (0, 0, 0)
+        n.status = (f"Sun: azimuth {sun['azimuth_deg']:.0f} deg, {sun['elevation_deg']:.0f} deg high "
+                    f"({sun['utc'][:16].replace('T', ' ')} UTC)")
+        self.report({"INFO"}, n.status)
+        _redraw(context)
+        return {"FINISHED"}
+
+
+CATCHER_NAME = "Niko shadow catcher"
+
+
+class NIKO_OT_shadow_catcher(bpy.types.Operator):
+    bl_idname = "niko.shadow_catcher"
+    bl_label = "Add shadow catcher"
+    bl_description = ("A ground plane on the scene's floor (Z = 0) that renders only the shadows and reflections "
+                      "of your 3D objects (Cycles), with a transparent background, ready to lay over the footage")
+    bl_options = {"REGISTER", "UNDO"}
+
+    def execute(self, context):
+        n = context.scene.niko
+        world = bpy.data.objects.get("Niko world")
+        s = solve_io.get(n.solve_dir)
+        if world is None or s is None:
+            self.report({"ERROR"}, "Load a solve first")
+            return {"CANCELLED"}
+        wscale = max(world.matrix_world.to_scale())
+        depth = (s.blender.get("median_depth") or 10.0 / max(wscale, 1e-9)) * wscale  # scene units
+        ob = bpy.data.objects.get(CATCHER_NAME)
+        if ob is None:
+            me = bpy.data.meshes.new(CATCHER_NAME)
+            h = 1.0
+            me.from_pydata([(-h, -h, 0), (h, -h, 0), (h, h, 0), (-h, h, 0)], [], [(0, 1, 2, 3)])
+            me.update()
+            ob = bpy.data.objects.new(CATCHER_NAME, me)
+            coll = bpy.data.collections.get(COLLECTION) or context.scene.collection
+            coll.objects.link(ob)
+        size = 4.0 * depth
+        cam = context.scene.camera
+        c = cam.matrix_world.translation if cam is not None else Vector((0, 0, 0))
+        ob.matrix_world = Matrix.Translation((c.x, c.y, 0.0)) @ Matrix.Scale(size, 4)
+        ob.is_shadow_catcher = True
+        context.scene.render.engine = "CYCLES"
+        context.scene.render.film_transparent = True
+        n.status = f"Shadow catcher on the floor ({2 * size:.3g} units wide). Cycles, transparent background"
         self.report({"INFO"}, n.status)
         _redraw(context)
         return {"FINISHED"}
@@ -1313,6 +1462,45 @@ class NIKO_OT_sim_mesh(bpy.types.Operator):
         return {"FINISHED"}
 
 
+TEX_NAME = "Niko textured mesh"
+
+
+class NIKO_OT_textured_mesh(bpy.types.Operator):
+    bl_idname = "niko.textured_mesh"
+    bl_label = "Add textured mesh"
+    bl_description = ("The scene mesh with the footage's own pictures as a texture: far fewer triangles than the "
+                      "coloured mesh, the same detail, light to render and to edit")
+    bl_options = {"REGISTER", "UNDO"}
+
+    @classmethod
+    def poll(cls, context):
+        s = solve_io.get(context.scene.niko.solve_dir)
+        return s is not None and os.path.exists(os.path.join(solve_io.selected_dir(s.folder), "mesh_textured.obj"))
+
+    def execute(self, context):
+        path = os.path.join(solve_io.selected_dir(context.scene.niko.solve_dir), "mesh_textured.obj")
+        old = bpy.data.objects.get(TEX_NAME)
+        if old is not None:
+            bpy.data.objects.remove(old, do_unlink=True)
+        before = set(bpy.data.objects)
+        # written in the solve's own axes (not OBJ's Y-up): no conversion
+        bpy.ops.wm.obj_import(filepath=path, forward_axis="Y", up_axis="Z")
+        new = [o for o in bpy.data.objects if o not in before]
+        if not new:
+            self.report({"ERROR"}, "The textured mesh could not be read")
+            return {"CANCELLED"}
+        ob = new[0]
+        ob.name = TEX_NAME
+        world = bpy.data.objects.get("Niko world")
+        if world is not None:
+            ob.parent = world
+            ob.matrix_parent_inverse = Matrix.Identity(4)
+            ob.matrix_basis = Matrix.Identity(4)
+        context.scene.niko.status = f"Textured mesh: {len(ob.data.polygons):,} faces with the footage as texture"
+        self.report({"INFO"}, context.scene.niko.status)
+        return {"FINISHED"}
+
+
 class NIKO_OT_open_folder(bpy.types.Operator):
     bl_idname = "niko.open_folder"
     bl_label = "Open solve folder"
@@ -1354,7 +1542,7 @@ def _ensure_tab():
 
 
 _classes = (NIKO_OT_workspace, NIKO_OT_solve, NIKO_OT_cancel, NIKO_OT_load, NIKO_OT_rebuild,
-            NIKO_OT_jump_worst, NIKO_OT_goto_frame, NIKO_OT_masks_all, NIKO_OT_set_size, NIKO_OT_set_ground, NIKO_OT_reset_adjust, NIKO_OT_sim_mesh,
+            NIKO_OT_jump_worst, NIKO_OT_goto_frame, NIKO_OT_masks_all, NIKO_OT_set_size, NIKO_OT_set_ground, NIKO_OT_reset_adjust, NIKO_OT_add_sun, NIKO_OT_shadow_catcher, NIKO_OT_export_3d, NIKO_OT_textured_mesh, NIKO_OT_sim_mesh,
             NIKO_OT_locktest, NIKO_OT_export_ae, NIKO_OT_open_folder, NIKO_OT_empties,
             NIKO_OT_edit_points, NIKO_OT_update, NIKO_OT_mesh, NIKO_OT_project)
 

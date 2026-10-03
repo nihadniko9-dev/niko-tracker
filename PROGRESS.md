@@ -2,6 +2,99 @@
 
 Newest first. Every claim here was run on this machine; the command and the numbers are listed.
 
+## 2026-10-03 — 0.6.0: every camera Nihad has, exact project settings, the sun, textured mesh, exports
+
+Nihad: test every camera and resolution (his own footage first, the internet otherwise), Sony / Canon /
+RED / ARRI too, read every video's fps without breaking anything and give the project the video's own
+resolution and frame rate; publish when the results are good. Name: Nihad Jiad Yousef (65808e6).
+
+- **Footage found on this PC** (read-only, ffprobe metadata of 10,332 videos on C, D, E; the workplace
+  network drives were not scanned): DJI Air 3S, DJI Mini 5 Pro, DJI Osmo Pocket 3, Sony FX6 (MXF + XML,
+  S-Log3), Sony PXW-Z90 (1080i MXF), Sony a7 III (XAVC S MP4), iPhone 11 / 14 Pro / 15 Pro / 17 Pro Max,
+  GoPro HERO12, Blackmagic BRAW. No Canon, RED or ARRI video on the PC. GoPro HERO5 to HERO8 and Karma
+  from GoPro's own samples (github.com/gopro/gpmf-parser, 33 MB, with his permission).
+- **Every camera solved** (`niko solve`, default settings; median held-out error, share within 3 px):
+
+  | Camera, clip | Video | Result |
+  |---|---|---|
+  | GoPro HERO8 (sample) | 848x480 29.97 | 0.240 px, 98.8 % |
+  | GoPro HERO7 (sample) | 848x480 29.97 | 0.235 px, 99.3 % |
+  | GoPro HERO6 (sample) | 848x480 29.97 | 0.662 px, 91.9 % |
+  | GoPro HERO5 (sample) | 854x480 23.976 | 0.801 px, 86.6 % (failed before the CoTracker fix) |
+  | GoPro HERO12, 5.3K upright | 2988x5312 25 | 0.698 px, 94.4 % |
+  | GoPro Karma (sample) | 854x480 29.97 | 0.210 px, 99.8 % |
+  | iPhone 11, night, variable rate, upright | 1080x1920 30 | 34.7 % -> "Not reliable" (motion blur) |
+  | iPhone 14 Pro ProRes, night driving | 1920x1080 60 | 53.4 % -> "Not reliable" |
+  | iPhone 15 Pro HEVC HLG, upright | 2160x3840 30 | 0.964 px, 81.4 % |
+  | iPhone 15 Pro H.264 | 3840x2160 30 | 0.536 px, 97.2 % |
+  | iPhone 17 Pro Max HEVC HLG, upright (10 s copy) | 2160x3840 60 | 0.474 px, 91.8 % (both COLMAP solves failed, MegaSaM held) |
+  | Sony FX6 S-Log3 MXF, 24 mm | 3840x2160 50 | 1.694 px, 69.9 % (moving foliage); lens 3915 px, metadata 3878 |
+  | Sony FX6 S-Log3 MXF, 200 mm | 3840x2160 50 | 0.842 px, 88.2 % free (35,415 px, not measurable alone); 1.022 px, 82.6 % with the recorded lens as is (32,321 px); 0.861 px, 87.8 % with the recorded lens x the focus factor (36,100 px) from a free-focal start |
+  | Sony PXW-Z90 1080i MXF | 1920x1080 25 | 0.540 px, 87.3 % |
+  | Sony a7 III (ILCE-7M3) XAVC S MP4 | 3840x2160 25 | 0.622 px, 90.0 % |
+  | DJI Mini 5 Pro | 3840x2160 50 | 0.649 px, 94.1 % free (1795 px, not measurable: turns 0.18 deg); 0.640 px, 94.8 % with the maker's lens (2662 px) |
+  | DJI Osmo Pocket 3 | 3840x2160 25 | 1.121 px, 82.7 % |
+
+- **Camera readers** (`niko.telemetry`): every DJI model through the common djmd layout (Air 3S, Mini 5
+  Pro with GPS in degrees, Osmo Pocket 3 without GPS); GoPro GPMF (model from the settings box or the
+  firmware, lens mode, field of view, stabilisation, GPS 3D fixes with DOP <= 5, gravity when written;
+  HERO8 sample: GRAV all zero); Sony XML sidecar, or the same XML inside an XAVC S MP4 (model, lens,
+  gamma: a course clip turned out to be a Sony a7 III), and the MXF's per-frame SMPTE RDD 18 metadata (FX6
+  with the 70-200 GM II: 200 mm, 35 mm equivalent 317.4, focus 1.66-2.20 m; with the 24-70 GM II: 24 mm).
+- **Known lenses**: a Sony clip's recorded lens (35 mm equivalent x diagonal / 43.27 mm) times the focus
+  factor: a lens focused close sits further from the sensor than its focal length (thin lens, subject
+  distance from the sensor), and a pinhole camera's focal length is that distance. FX6 200 mm focused at
+  2.13 m (median): 32,321 px x 1.117 = 36,100 px. `scripts/dev/lens_sweep.py` held the focal at each value
+  and refitted: median held-out error 0.875 px at 32,321, 0.840 at 35,663, 0.834 at 36,100, 0.865 at
+  37,500, 0.894 at 40,000 (best 34,000-36,100). FX6 24 mm at 1.35 m: x 1.018 = 3951 px; the footage
+  measured 3915 px and fits every value 3800-4060 px within 0.01 px. A known lens set straight on a raw
+  camera with another focal can settle in a worse optimum (FX6 200 mm, MegaSaM's raw camera: 74.5 % within
+  3 px), so bundle adjustment with a known lens now also starts from a free-focal refinement and
+  auto-select keeps the better (79.4 %; end to end, COLMAP's: 87.8 %). For DJI Air 3S and Mini 5 Pro, when
+  the camera turns less than 1 deg, the maker's spec (24 mm equivalent on the 13.1 x 9.8 mm sensor, with
+  the clip's sensor crop and zoom: 2662 px at 4K): the Mini 5 Pro clip solved freely with 1795 px put the
+  sun's shadows the wrong way; solved end to end with the spec, "Ready for visual check" instead of "Needs
+  review", the predicted shadows fall with the real ones, and its GPS (an 8.6 m path, below the 20 m
+  needed to trust it) fits the camera path to 3 cm.
+- **Inputs**: upright phone videos (rotation flag) are solved portrait; `--ignore-rotation` for a file
+  whose flag is wrong (an iPhone 15 Pro clip: stored landscape picture, flag says 90 deg); fps comes from
+  the measured frame spacing, snapped to a standard rate (Sony Z90 1080i: ffprobe said 12.5, it is 25;
+  iPhone 17 Pro Max: 59.971 from one late frame, it is 60); variable-rate clips (iPhone 11: 13.8 % of the
+  intervals 33 -> 43 ms) keep every frame at their nominal rate; interlaced video is deinterlaced (yadif);
+  EXR (with the sRGB curve), DPX and 16-bit TIFF sequences; camera RAW (BRAW, R3D, ARRIRAW, Canon RAW)
+  stops with the way out (export from DaVinci Resolve).
+- **Project = video**: `tests/blender/addon_project_check.py` builds each solve and compares the scene
+  with the video: resolution, fps (fps / fps_base), frame range, and footage behind the camera with one
+  picture per key (Blender's own movie-clip frame count, or the engine's frames for variable-rate, upright
+  and interlaced clips, also in After Effects); and the After Effects comp. All 22 solves checked match,
+  e.g. GoPro HERO12 upright 2988x5312 25 fps 138 frames (image sequence), iPhone 11 variable-rate
+  1080x1920 30 fps 190 frames, Sony Z90 1080i 1920x1080 25 fps 288 frames (deinterlaced sequence), iPhone
+  14 Pro 1920x1080 60 fps 952 frames, Sony FX6 3840x2160 50 fps, GoPro HERO5 854x480 23.976 fps.
+- **Bugs fixed**: CoTracker3 needs both sides divisible by 4; 854x480 (GoPro samples) failed. One
+  `tracker_size` rule now; 960x540 and other dividing sizes unchanged. FBX export wrote no animation
+  (Blender's NLA-strip default): baked as one take now. Open3D's UV atlas crashed on non-manifold scene
+  meshes and at 300k triangles on two clips: cleaned to manifold, retried with 0.6x the triangles. A
+  depth-model gap of 10^14 % is shown as "more than 1000 % apart".
+- **The sun** (`niko.sun`): NOAA solar position from the GPS and the container's UTC creation time (DJI
+  writes UTC there: clip 0079 is 23:49 local, a night shot, and says so); north from the GPS track (or the
+  compass); Blender "Add the real sun" parents a sun lamp to the world: lamp 1.758 deg high (sun 1.76),
+  288.875 deg from the scene's north (sun 288.88) on clip 0148. "Add shadow catcher".
+- **Textured mesh**: `niko mesh` also writes mesh_textured.obj (UVAtlas, the stereo frames projected into
+  a 4K texture): clip 03, 300k triangles + 4096 texture in 140 s, 0.16 % of the scene size from the
+  coloured mesh (1.8M triangles); Blender "Add textured mesh". Nihad's solves got textured copies.
+- **Export camera**: FBX, Alembic, USD; re-imported: camera position, angle and lens exact on clips 03 and
+  0148 (FBX keys at frame / fps, read from the binary; Blender's own FBX importer reads t * round(fps) +
+  1).
+- `niko batch` (many clips, finished ones skipped). Lens check `hardly_turns`, camera profiles and `niko
+  calibrate` from 0.5.0 unchanged. A solve where fewer than 60 % of the points fit is "Not reliable" in
+  the panel and the overlay.
+- Checks: 107 unit tests and the smoke pipeline test; Blender background checks (DJI 0148 and GoPro HERO12
+  upright, no missing icons), size, ground, sun + shadow catcher, export (FBX / Alembic / USD), textured
+  mesh, project settings on 22 solves, update (0.6.0 -> 0.6.1 from a release folder); GUI screenshots of
+  the 0.6.0 panel on the Mini 5 Pro (maker's lens) and FX6 (camera metadata) solves. The known lens label
+  crashed the panel for the maker's, metadata and profile lenses (it expected millimetres and a sensor):
+  fixed.
+
 ## 2026-10-03 — 0.5.0: drone telemetry (GPS size, gimbal level), cameras and calibration, set ground
 
 Nihad: "do the next phases too", measurements very accurate, recognise every camera, test real size

@@ -38,6 +38,7 @@ uv run niko locktest <out> [--scale 0.5]             # lock-test MP4: held-out t
 uv run niko export-ae <out>                          # After Effects .jsx (also written by every solve)
 uv run niko mesh <out> [--quality good]             # editable scene mesh (multi-view stereo on the solve)
 uv run niko calibrate <out>                          # measure the camera's lens from a calibration clip, once
+uv run niko batch <folder|clips...> [-o <root>]      # solve many clips one after another (finished ones skipped)
 uv run niko bench generate [--set synthetic_v1] [--preview] [--shots a,b]
 uv run niko bench run --name <run> [--methods ...] [--shots a,b] [--reuse] [--force]
 uv run niko bench report <run>                       # runs/<run>/report.html + metrics.csv, copied to reports/<run>
@@ -54,11 +55,39 @@ score, the average tracking error and the lens check.
 1 degree: a forward dolly, a drone flying sideways on a steady gimbal) cannot measure its lens; the
 solve then says "lens not measured". Better than typing a lens: calibrate the camera once.
 
+Maker's lens: for DJI drones whose camera spec is known (Air 3S, Mini 5 Pro: 24 mm equivalent on a
+1-inch sensor) the engine uses the spec when the camera hardly turns (under 1 degree: flying straight on
+a steady gimbal), because such footage cannot measure the lens (real clips: 2979 px and 1795 px chosen
+freely, the spec gives 2662 px; where the footage could measure it, 2654-2940 px).
+
+Lens metadata: a Sony cinema camera records its lens and focus distance in every frame; the engine
+uses them as the known lens when the lens does not change in the clip. A lens focused close behaves
+longer than its focal length (FX6 at 200 mm focused at 2.1 m: 11.7 % longer; held at each value, the
+footage fits best right there, while 24 mm at 1.35 m fits any value within 3 %). `--ignore-rotation`
+uses the picture as stored when a file's rotation flag is wrong. A solve where fewer than 60 % of the
+tracked points fit is marked "Not reliable".
+
 Cameras: the engine reads which camera made the clip (a DJI drone's telemetry names the camera
 module, its video mode and zoom; phones write a make and model). `niko calibrate <out>` on a solved
 calibration clip (hover or stand still and turn slowly, a full circle is best) measures the lens and
 keeps it in `$NIKO_HOME/camera_profiles.json`; every later clip from that camera and video mode is
 then solved with it (when measured to 1.5 % or better; DJI clips are cross-checked with the gimbal).
+
+Cameras tested on real footage: DJI Air 3S and Mini 5 Pro drones, DJI Osmo Pocket 3, GoPro HERO5 to HERO8,
+HERO12 and Karma, iPhone 11 / 14 Pro / 15 Pro / 17 Pro Max (H.264, HEVC HDR, ProRes, upright and
+variable-rate videos), Sony FX6 (S-Log3 MXF with lens metadata), Sony PXW-Z90 (1080i MXF) and a7 III
+(XAVC S MP4). Camera RAW (BRAW, R3D, ARRIRAW, Canon RAW) needs its maker's software: export it from
+DaVinci Resolve as ProRes or an EXR / TIFF / DPX sequence first.
+
+Project settings: the Blender scene and the After Effects comp get the video's own resolution (upright
+phone videos portrait) and frame rate, measured from the frames (29.97, 59.94, 23.976 exactly; a
+variable-rate phone clip at its nominal rate with every frame kept; interlaced video deinterlaced), and
+the footage shows exactly one picture per camera key. Export camera writes FBX, Alembic or USD for other
+programs (frame 1 at time 1/fps).
+
+The sun: with GPS and the recording time (DJI and GoPro) the engine knows where the sun was;
+Blender > Add the real sun puts a sun lamp there, turned with the scene (north from the GPS track).
+Add shadow catcher puts a shadow-only ground plane on the floor for compositing.
 
 Drone telemetry (DJI): GPS, altitude and gimbal angles recorded in the video are read automatically.
 The camera path is fitted to the GPS track for the real size (Nihad's Air 3S clips: within 1 %, the
@@ -83,7 +112,9 @@ back to the engine's own size and ground.
 Scene mesh (`niko mesh <solve> --quality fast|good|high`): full-resolution frames for good/high,
 points on moving things and far junk removed, floating pieces dropped, small holes filled, light
 smoothing; `selected/mesh_sim.ply` is a simplified hole-filled copy for physics (Blender: Add
-simulation collider).
+simulation collider); `selected/mesh_textured.obj` carries the footage itself as a 4K texture on a
+much lighter surface (real clip 03: 300k triangles show what the 1.8M-triangle coloured mesh shows;
+Blender: Add textured mesh).
 
 CLI reuse is conservative: only a completed solve with matching source contents, settings and
 engine code can be reused. Older solves remain loadable; use a new output folder to solve them

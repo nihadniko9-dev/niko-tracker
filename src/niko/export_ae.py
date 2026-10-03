@@ -362,10 +362,12 @@ def export_after_effects(solve_dir: str | Path, out: str | Path | None = None, n
     if abs(np.median(trk.K[v, 0, 0]) - np.median(trk.K[v, 1, 1])) > 0.5:
         notes.append("fx and fy differ (non-square pixels); zoom uses fx")
 
+    from .pipeline.ingest import frames_as_footage
+
     src = Path(shot.get("source", ""))
     if undistorted is not None:
         footage, sequence = undistorted, True
-    elif src.suffix.lower() in VIDEO_EXT and src.exists():
+    elif src.suffix.lower() in VIDEO_EXT and src.exists() and not frames_as_footage(shot):
         footage, sequence = src, False
     else:
         footage, sequence = solve_dir / "frames" / f"000000.{shot['frame_format']}", True
